@@ -145,11 +145,12 @@ mailing_lists
     → contacts.mailing_lists (JSON — keys are list IDs, values are booleans)
 
 contact_properties
-  → key (property name, camelCase)
-    → use key with contacts to access custom property values:
-       json_get_str(contacts.mailing_lists, 'planName')
-    → query loops.contact_properties WHERE list = 'custom' to see
-       only user-defined properties before querying contacts
+  → key (property name, camelCase), label, type
+    → discovery-only: inspect what property keys exist in the account
+    → query loops.contact_properties WHERE list = 'custom' to list
+       only user-defined properties
+    → note: custom property values are not exposed in contacts columns
+       in v1; contact_properties is a schema-inspection table only
 
 transactional_emails
   → id (transactionalId)
