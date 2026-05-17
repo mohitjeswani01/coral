@@ -147,12 +147,8 @@ tables:
       contact is found, zero rows if not. This is a lookup table — the Loops
       API does not support bulk listing of all contacts.
     guide: |
-      This table performs a point lookup by email. You must provide the
-      `email` filter. The optional `user_id` filter can be used instead of
-      or alongside email.
-
-      Note: The Loops API requires exactly one of `email` or `userId` per
-      request. If both are provided, the API will reject the request with 400.
+      This table performs a point lookup by email address. You must provide
+      the `email` filter. Returns one row if found, zero rows if not.
 
       `mailing_lists` is a JSON object where each key is a mailing list ID
       (e.g. list_123) and the value is a boolean subscription status.
@@ -163,8 +159,6 @@ tables:
     filters:
       - name: email
         required: true
-      - name: user_id
-        required: false
     request:
       method: GET
       path: /contacts/find
@@ -172,9 +166,6 @@ tables:
         - name: email
           from: filter
           key: email
-        - name: userId
-          from: filter
-          key: user_id
     response:
       row_strategy: direct
     pagination:

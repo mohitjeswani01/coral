@@ -35,7 +35,7 @@ See [Loops API reference](https://loops.so/docs/api-reference/intro) for full do
 |---|---|---|---|
 | `mailing_lists` | All mailing lists in the account | — | — |
 | `contact_properties` | All contact property definitions | — | `list` |
-| `contacts` | Look up a single contact by email | `email` | `user_id` |
+| `contacts` | Look up a single contact by email | `email` | — |
 | `transactional_emails` | Published transactional email templates | — | — |
 | `campaigns` | All campaigns with lifecycle status | — | — |
 
@@ -62,9 +62,6 @@ Key columns: `key`, `label`, `type`.
 **This is a lookup table, not a bulk list.** The Loops API does not support
 listing all contacts in bulk. You must supply the `email` filter to perform
 a point lookup. Returns one row if found, zero rows if not.
-
-> **Note:** The Loops API accepts only one of `email` or `userId` per request.
-> If both filters are supplied, the API returns a 400 error.
 
 Key columns: `id`, `email`, `first_name`, `last_name`, `subscribed`,
 `user_group`, `mailing_lists` (JSON), `opt_in_status`.
@@ -148,8 +145,11 @@ mailing_lists
     → contacts.mailing_lists (JSON — keys are list IDs, values are booleans)
 
 contact_properties
-  → key (property name)
-    → contacts (custom properties appear as dynamic fields in mailing_lists JSON)
+  → key (property name, camelCase)
+    → use key with contacts to access custom property values:
+       json_get_str(contacts.mailing_lists, 'planName')
+    → query loops.contact_properties WHERE list = 'custom' to see
+       only user-defined properties before querying contacts
 
 transactional_emails
   → id (transactionalId)
