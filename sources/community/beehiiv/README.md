@@ -57,7 +57,7 @@ publications
 | Filter | Notes |
 |---|---|
 | `status` | `active`, `churned`, `pending`, `validating` |
-| `email` | Case-insensitive exact match |
+| `email` | Exact match (case sensitivity not documented in the API spec) |
 
 ## Quick start
 
@@ -118,11 +118,13 @@ FROM beehiiv.publications;
 SELECT
   id,
   title,
+  subject_line,
   slug,
   status,
   audience,
   platform,
   published_at,
+  authors,
   web_url
 FROM beehiiv.posts
 WHERE publication_id = 'pub_00000000-0000-0000-0000-000000000000'
@@ -138,11 +140,13 @@ SELECT
   id,
   email,
   status,
+  subscription_tier,
   created_at,
   referring_site,
   utm_source,
   utm_medium,
-  utm_campaign
+  utm_campaign,
+  utm_channel
 FROM beehiiv.subscriptions
 WHERE publication_id = 'pub_00000000-0000-0000-0000-000000000000'
   AND status = 'active'
@@ -156,12 +160,14 @@ SELECT
   id,
   email,
   status,
+  subscription_tier,
   created_at,
   referral_code,
   utm_source,
   utm_campaign,
   subscription_premium_tiers,
-  tags
+  tags,
+  stats
 FROM beehiiv.subscriptions
 WHERE publication_id = 'pub_00000000-0000-0000-0000-000000000000'
   AND email = 'reader@example.com'

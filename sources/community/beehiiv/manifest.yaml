@@ -24,9 +24,9 @@ auth:
       template: Bearer {{input.BEEHIIV_API_KEY}}
 
 test_queries:
+  # Only the parameter-less publications table is safe as a smoke-test query.
+  # posts and subscriptions require a real publication_id — see README for examples.
   - SELECT * FROM beehiiv.publications LIMIT 5
-  - SELECT id, title, slug, status, published_at FROM beehiiv.posts WHERE publication_id = 'pub_00000000-0000-0000-0000-000000000000' LIMIT 5
-  - SELECT id, email, status, created_at FROM beehiiv.subscriptions WHERE publication_id = 'pub_00000000-0000-0000-0000-000000000000' LIMIT 5
 
 tables:
   # ------------------------------------------------------------------
@@ -56,6 +56,7 @@ tables:
     response:
       rows_path:
         - data
+      row_strategy: direct
       allow_404_empty: false
     pagination:
       mode: page
@@ -102,7 +103,10 @@ tables:
       - name: created_at
         type: Timestamp
         nullable: true
-        description: Publication creation time (Unix epoch seconds).
+        description: >-
+          Publication creation time. The OpenAPI spec types this field as
+          number/double rather than integer; DSL truncates to whole seconds,
+          which is sufficient for date/time queries.
         expr:
           kind: format_timestamp
           input: seconds
@@ -186,7 +190,8 @@ tables:
   # ------------------------------------------------------------------
   # beehiiv.posts — posts for a publication
   # GET /v2/publications/:publicationId/posts
-  # Pagination: cursor-based. Requires publication_id filter (path param).
+  # Pagination: page-based (offset). Requires publication_id filter (path param).
+  # Response envelope: {data, limit, page, total_results, total_pages}
   # ------------------------------------------------------------------
   - name: posts
     description: >-
@@ -199,7 +204,8 @@ tables:
       `audience` filter values: `free`, `premium`, `all`.
       `platform` filter values: `web`, `email`, `both`, `all`.
       `published_at` and `displayed_date` are Unix epoch timestamps.
-      `content_tags` is a comma-joined string of tag names.
+      `content_tags` and `authors` are comma-joined strings.
+      `subject_line` is the email subject (A/B-test winner after send).
     filters:
       - name: publication_id
         required: true
@@ -225,13 +231,13 @@ tables:
     response:
       rows_path:
         - data
+      row_strategy: direct
       allow_404_empty: false
     pagination:
-      mode: cursor_query
-      cursor_param: cursor
-      response_cursor_path:
-        - pagination
-        - next_cursor
+      mode: page
+      page_param: page
+      page_start: 1
+      page_step: 1
       page_size:
         default: 10
         max: 100
@@ -346,26 +352,65 @@ tables:
           kind: join_array
           path:
             - content_tags
+      - name: subject_line
+        type: Utf8
+        nullable: true
+        description: Email subject line (A/B-test winner after the post is sent).
+        expr:
+          kind: path
+          path:
+            - subject_line
+      - name: preview_text
+        type: Utf8
+        nullable: true
+        description: Email preview text shown in inbox clients before the email is opened.
+        expr:
+          kind: path
+          path:
+            - preview_text
+      - name: authors
+        type: Utf8
+        nullable: true
+        description: Comma-joined list of author names for this post.
+        expr:
+          kind: join_array
+          path:
+            - authors
+      - name: newsletter_list_id
+        type: Utf8
+        nullable: true
+        description: Newsletter list this post was sent to, if scoped to a specific list.
+        expr:
+          kind: path
+          path:
+            - newsletter_list_id
+
 
   # ------------------------------------------------------------------
   # beehiiv.subscriptions — subscribers for a publication
   # GET /v2/publications/:publicationId/subscriptions
-  # Pagination: cursor-based. Requires publication_id filter (path param).
-  # Hardcoded expand: custom_fields, tags, subscription_premium_tiers.
+  # Pagination: cursor-based (endpoint accepts cursor param; preferred over
+  # page-based for large subscriber lists where total_results is not needed).
+  # next_cursor is at the response root — no pagination wrapper object.
+  # expand[] sent as bracketed array params per the OpenAPI spec.
   # ------------------------------------------------------------------
   - name: subscriptions
     description: >-
       Subscribers for a Beehiiv publication. Requires `publication_id`
       (from `beehiiv.publications.id`). Optionally filter by `status`
-      or exact `email`. Includes UTM attribution and acquisition data.
+      or `email`. Includes UTM attribution, tier, and acquisition data.
     guide: |
       Requires `publication_id` — obtain it from `beehiiv.publications`.
       `status` filter values: `active`, `churned`, `pending`, `validating`.
-      `email` filter performs a case-insensitive exact match.
+      `email` filter performs an exact match (case sensitivity is not
+      documented in the API spec; treat as case-sensitive to be safe).
       `created_at` is a Unix epoch timestamp.
-      `subscription_premium_tiers`, `custom_fields`, and `tags` are JSON arrays
-      returned by the API when the `expand` parameter is set (hardcoded here).
-      Use SQL JSON functions to inspect their contents.
+      `subscription_premium_tiers`, `custom_fields`, and `tags` are JSON
+      arrays returned via hardcoded expand[] params. Use SQL JSON functions
+      to inspect them. `stats` contains per-subscriber open/click metrics
+      and also requires expand (hardcoded).
+      Cursor pagination is used over page-based because subscriber lists
+      can be very large and total_results is not needed for iteration.
     filters:
       - name: publication_id
         required: true
@@ -377,9 +422,18 @@ tables:
       method: GET
       path: /publications/{{filter.publication_id}}/subscriptions
       query:
-        - name: expand
+        - name: "expand[]"
           from: literal
-          value: custom_fields,tags,subscription_premium_tiers
+          value: custom_fields
+        - name: "expand[]"
+          from: literal
+          value: tags
+        - name: "expand[]"
+          from: literal
+          value: subscription_premium_tiers
+        - name: "expand[]"
+          from: literal
+          value: stats
         - name: status
           from: filter
           key: status
@@ -389,12 +443,12 @@ tables:
     response:
       rows_path:
         - data
+      row_strategy: direct
       allow_404_empty: false
     pagination:
       mode: cursor_query
       cursor_param: cursor
       response_cursor_path:
-        - pagination
         - next_cursor
       page_size:
         default: 10
@@ -491,6 +545,14 @@ tables:
           kind: path
           path:
             - utm_term
+      - name: utm_channel
+        type: Utf8
+        nullable: true
+        description: UTM channel associated with this subscription.
+        expr:
+          kind: path
+          path:
+            - utm_channel
       - name: utm_content
         type: Utf8
         nullable: true
@@ -499,6 +561,46 @@ tables:
           kind: path
           path:
             - utm_content
+      - name: subscription_tier
+        type: Utf8
+        nullable: true
+        description: >-
+          Current subscription tier (e.g. free, premium). Use
+          `WHERE subscription_tier = 'premium'` to filter paid subscribers
+          without parsing the nested subscription_premium_tiers JSON.
+        expr:
+          kind: path
+          path:
+            - subscription_tier
+      - name: subscription_premium_tier_names
+        type: Utf8
+        nullable: true
+        description: >-
+          Comma-joined flat list of premium tier names. Lighter than
+          subscription_premium_tiers JSON for simple name-based filtering.
+        expr:
+          kind: join_array
+          path:
+            - subscription_premium_tier_names
+      - name: newsletter_list_ids
+        type: Json
+        nullable: true
+        description: JSON array of newsletter list IDs this subscriber belongs to.
+        expr:
+          kind: path
+          path:
+            - newsletter_list_ids
+      - name: stats
+        type: Json
+        nullable: true
+        description: >-
+          Per-subscriber engagement stats (emails_received, open_rate,
+          click_through_rate). Populated via hardcoded expand[] param.
+          Use SQL JSON functions to inspect.
+        expr:
+          kind: path
+          path:
+            - stats
       - name: subscription_premium_tiers
         type: Json
         nullable: true
