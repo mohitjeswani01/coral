@@ -4,7 +4,7 @@ dsl_version: 3
 backend: http
 description: >-
   Query publications, posts, and subscribers from Beehiiv.
-  Covers newsletter metadata with engagement stats, post content,
+  Covers publication stats, post metadata (title, slug, status, URLs),
   and subscriber acquisition data.
 base_url: https://api.beehiiv.com/v2
 
