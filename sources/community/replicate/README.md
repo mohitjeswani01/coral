@@ -25,7 +25,7 @@ for details on token management and permissions.
 | Table | Description | Filters |
 |---|---|---|
 | `replicate.predictions` | Your AI inference history — every model run under the authenticated account | — |
-| `replicate.models` | Global public ML model catalog — browse and discover models by owner, run count, or sort order | `sort_by`, `sort_direction` (optional) |
+| `replicate.models` | Global public ML model catalog — browse and discover models by owner, latest updates, or creation date | `sort_by`, `sort_direction` (optional) |
 | `replicate.deployments` | Deployed models configured for the authenticated account, with hardware and scaling config | — |
 | `replicate.collections` | Curated model groups maintained by Replicate (e.g. "super-resolution", "text-to-image") | — |
 | `replicate.hardware` | Available GPU and CPU hardware options and their SKU identifiers | — |
@@ -113,7 +113,7 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
-### Browse the most-run public models
+### Browse recently updated public models
 
 ```sql
 SELECT
@@ -124,7 +124,7 @@ SELECT
   is_official,
   url
 FROM replicate.models
-WHERE sort_by = 'model_created_at'
+WHERE sort_by = 'latest_version_created_at'
   AND sort_direction = 'desc'
 LIMIT 25;
 ```
