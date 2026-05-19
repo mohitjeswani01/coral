@@ -147,7 +147,7 @@ SELECT
   stopped_at
 FROM checkly.check_results
 WHERE check_id = '<your-check-id>'
-  AND has_failures = 'true'
+  AND has_failures = true
   AND result_type = 'FINAL'
 LIMIT 50;
 ```
