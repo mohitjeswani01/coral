@@ -14,8 +14,20 @@ the minimum required permissions.
 2. Grant **Read** access to datasets, annotations, monitors, and notifiers.
 3. Copy the generated token.
 
+**US region (default):**
+
 ```sh
 export AXIOM_API_TOKEN="xaat-..."
+coral source add --file sources/community/axiom/manifest.yaml
+```
+
+**EU region:** Axiom workspaces on the EU data-residency region must also set
+`AXIOM_URL`. The default is the US endpoint; EU workspaces are unreachable
+through it.
+
+```sh
+export AXIOM_API_TOKEN="xaat-..."
+export AXIOM_URL="https://api.eu.axiom.co"
 coral source add --file sources/community/axiom/manifest.yaml
 ```
 

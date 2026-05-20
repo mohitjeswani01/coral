@@ -7,9 +7,16 @@ description: >-
   Covers dataset metadata and retention policy, deployment and incident
   annotations, monitor definitions and thresholds, and notifier
   configurations.
-base_url: https://api.axiom.co/v2
+base_url: "{{input.AXIOM_URL}}/v2"
 
 inputs:
+  AXIOM_URL:
+    kind: variable
+    default: "https://api.axiom.co"
+    hint: |
+      Axiom API base URL. Defaults to the US region.
+      EU workspaces should set this to `https://api.eu.axiom.co`.
+      Do not include a trailing slash.
   AXIOM_API_TOKEN:
     kind: secret
     hint: |
@@ -50,7 +57,8 @@ tables:
     request:
       method: GET
       path: /datasets
-    response: {}
+    response:
+      row_strategy: direct
     pagination:
       mode: none
     columns:
@@ -166,7 +174,8 @@ tables:
         - name: end
           from: filter
           key: end
-    response: {}
+    response:
+      row_strategy: direct
     pagination:
       mode: none
     columns:
@@ -287,7 +296,8 @@ tables:
     request:
       method: GET
       path: /monitors
-    response: {}
+    response:
+      row_strategy: direct
     pagination:
       mode: none
     columns:
@@ -466,7 +476,8 @@ tables:
     request:
       method: GET
       path: /notifiers
-    response: {}
+    response:
+      row_strategy: direct
     pagination:
       mode: none
     columns:
