@@ -4,6 +4,11 @@ Query datasets, annotations, monitors, and notifiers from
 [Axiom](https://axiom.co/) — the cloud-native log management and observability
 platform.
 
+> **Note:** This source exposes Axiom **configuration metadata** only —
+> datasets, annotations, monitors, and notifiers. It does not query the event
+> or log data stored inside datasets. To run APL queries over log/event data,
+> use Axiom's own query interface.
+
 ## Authentication
 
 Requires an **Axiom API token**. Personal Access Tokens (PATs) work for
@@ -22,17 +27,17 @@ coral source add --file sources/community/axiom/manifest.yaml
 ```
 
 **EU region:** Axiom workspaces on the EU data-residency region must also set
-`AXIOM_URL`. The default is the US endpoint; EU workspaces are unreachable
+`AXIOM_API_BASE`. The default is the US endpoint; EU workspaces are unreachable
 through it.
 
 ```sh
 export AXIOM_API_TOKEN="xaat-..."
-export AXIOM_URL="https://api.eu.axiom.co"
+export AXIOM_API_BASE="https://api.eu.axiom.co"
 coral source add --file sources/community/axiom/manifest.yaml
 ```
 
 See [Axiom API authentication docs](https://axiom.co/docs/restapi/introduction)
-for details on token types, scopes, and rotation.
+for details on token types, scopes, rate limits, and rotation.
 
 ## Tables
 
@@ -120,7 +125,7 @@ SELECT
   alert_on_no_data,
   resolvable
 FROM axiom.monitors
-WHERE disabled = false
+WHERE COALESCE(disabled, false) = false
 ORDER BY name;
 ```
 
@@ -141,10 +146,3 @@ WHERE type      = 'Threshold'
   AND threshold > 100
 ORDER BY threshold DESC;
 ```
-
-## Auth
-
-This source uses the `Authorization: Bearer <token>` header with an Axiom API
-token. See the
-[Axiom REST API introduction](https://axiom.co/docs/restapi/introduction) for
-full documentation on authentication, token scopes, and rate limits.
