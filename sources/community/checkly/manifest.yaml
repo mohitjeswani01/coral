@@ -19,7 +19,7 @@ inputs:
       A read-only key is sufficient for all tables in this source.
       Docs: https://developers.checklyhq.com/docs/authentication
   CHECKLY_ACCOUNT_ID:
-    kind: secret
+    kind: variable
     hint: |
       Checkly Account ID. Find it in:
         Account Settings → General → Account ID
@@ -269,8 +269,8 @@ tables:
   # ────────────────────────────────────────────────────────────────────────
   # checkly.check_results — recent run results for a specific check
   # GET /v2/check-results/{checkId}   ← NOTE: v2, not v1 (v1 is deprecated)
-  # Response: root JSON array
-  # Pagination: mode: page, page + limit query params
+  # Response: { length, entries: [...], nextId } — cursor-based
+  # Pagination: mode: cursor_query, cursor sent via nextId query param
   # Requires: check_id filter (get IDs from checkly.checks)
   # Raw results are retained for 30 days.
   # ────────────────────────────────────────────────────────────────────────
@@ -287,8 +287,9 @@ tables:
       `has_errors = true` means a Checkly backend error occurred (not a check failure).
       `result_type` is FINAL (completed run) or ATTEMPT (intermediate retry).
       Filter to `WHERE result_type = 'FINAL'` to exclude retry attempts.
-      Use `WHERE has_failures = 'true'` to filter for only failing runs.
+      Use `WHERE has_failures = true` to filter for only failing runs.
       `response_time` is in milliseconds.
+      `from` and `to` filters accept UNIX timestamps in seconds (not milliseconds).
       Results older than 30 days are not available.
     filters:
       - name: check_id
@@ -318,17 +319,16 @@ tables:
           from: filter
           key: to
     response:
-      rows_path: []
+      rows_path: [entries]
       row_strategy: direct
     pagination:
-      mode: page
-      page_param: page
-      page_start: 1
+      mode: cursor_query
+      cursor_param: nextId
+      response_cursor_path: [nextId]
       page_size:
         default: 100
         max: 100
         query_param: limit
-      link_header_require_results: false
     columns:
       - name: check_id
         type: Utf8
@@ -469,7 +469,7 @@ tables:
         nullable: true
         virtual: true
         description: >-
-          Echoes the from filter applied to this query (UNIX millisecond timestamp).
+          Echoes the from filter applied to this query (UNIX timestamp in seconds).
           Lower bound for the time window — applied server-side.
         expr:
           kind: from_filter
@@ -480,7 +480,7 @@ tables:
         nullable: true
         virtual: true
         description: >-
-          Echoes the to filter applied to this query (UNIX millisecond timestamp).
+          Echoes the to filter applied to this query (UNIX timestamp in seconds).
           Upper bound for the time window — applied server-side.
         expr:
           kind: from_filter
@@ -626,7 +626,7 @@ tables:
           expr:
             kind: path
             path:
-              - createdAt
+              - created_at
 
       - name: updated_at
         type: Timestamp
@@ -638,7 +638,7 @@ tables:
           expr:
             kind: path
             path:
-              - updatedAt
+              - updated_at
 
   # ────────────────────────────────────────────────────────────────────────
   # checkly.dashboards — public and private status page dashboards
@@ -679,9 +679,10 @@ tables:
       link_header_require_results: false
     columns:
       - name: id
-        type: Utf8
+        type: Int64
         nullable: false
-        description: Unique dashboard UUID.
+        description: >-
+          Unique dashboard ID. Checkly documents this as a numeric identifier.
         expr:
           kind: path
           path:
@@ -773,7 +774,7 @@ tables:
           expr:
             kind: path
             path:
-              - createdAt
+              - created_at
 
       - name: updated_at
         type: Timestamp
@@ -785,4 +786,4 @@ tables:
           expr:
             kind: path
             path:
-              - updatedAt
+              - updated_at

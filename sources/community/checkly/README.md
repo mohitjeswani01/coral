@@ -70,8 +70,8 @@ Recent run results for one specific check. **`check_id` is required.** Get check
 | `check_id` | ✅ Yes | UUID of the check to fetch results for |
 | `result_type` | No | `FINAL` (completed runs) or `ATTEMPT` (retry attempts) |
 | `has_failures` | No | `true` to return only failing runs |
-| `from` | No | UNIX millisecond timestamp — lower time bound |
-| `to` | No | UNIX millisecond timestamp — upper time bound |
+| `from` | No | UNIX timestamp in **seconds** — lower time bound |
+| `to` | No | UNIX timestamp in **seconds** — upper time bound |
 
 Key columns:
 
@@ -184,10 +184,10 @@ WHERE is_private = false;
 
 This source uses two headers on every request:
 
-| Header | Value |
-|---|---|
-| `Authorization` | `Bearer <CHECKLY_API_KEY>` |
-| `X-Checkly-Account` | `<CHECKLY_ACCOUNT_ID>` |
+| Header | Value | Input kind |
+|---|---|---|
+| `Authorization` | `Bearer <CHECKLY_API_KEY>` | `secret` |
+| `X-Checkly-Account` | `<CHECKLY_ACCOUNT_ID>` | `variable` |
 
 Both credentials are required. Requests without the `X-Checkly-Account` header will be rejected by the API regardless of the API key's validity.
 
