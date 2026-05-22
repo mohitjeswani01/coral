@@ -9,8 +9,8 @@ learning models.
 Requires a **Replicate API token**.
 
 1. Log in to Replicate → [Account → API tokens](https://replicate.com/account/api-tokens) → **New API token**.
-2. Give it a name (e.g. "coral-read") and copy the generated token.
-3. A read-only token is sufficient for all tables in this source.
+2. Give it a name (e.g. "coral") and copy the generated token.
+3. This source only performs read-only GET requests. Any Replicate API token is sufficient — Replicate does not provide scoped or read-only token variants.
 
 ```sh
 export REPLICATE_API_TOKEN="r8_..."
@@ -18,13 +18,13 @@ coral source add --file sources/community/replicate/manifest.yaml
 ```
 
 See the [Replicate API authentication docs](https://replicate.com/docs/reference/http)
-for details on token management and permissions.
+for details on token management.
 
 ## Tables
 
 | Table | Description | Filters |
 |---|---|---|
-| `replicate.predictions` | Your AI inference history — every model run under the authenticated account | — |
+| `replicate.predictions` | Your AI inference history — every model run under the authenticated account | `created_after`, `created_before`, `source` (optional) |
 | `replicate.models` | Global public ML model catalog — browse and discover models by owner, latest updates, or creation date | `sort_by`, `sort_direction` (optional) |
 | `replicate.deployments` | Deployed models configured for the authenticated account, with hardware and scaling config | — |
 | `replicate.collections` | Curated model groups maintained by Replicate (e.g. "super-resolution", "text-to-image") | — |
@@ -32,8 +32,8 @@ for details on token management and permissions.
 
 ### `replicate.predictions`
 
-Returns all predictions made by the authenticated user, newest first.
-No filter is required — the API token scopes results to the account automatically.
+Returns predictions made by the authenticated user, newest first.
+Results are limited to the first page (up to 100 predictions) because Replicate's full-URL pagination is not supported. To filter predictions upstream, use `created_after`, `created_before`, or `source` filters.
 
 Key columns:
 
@@ -46,16 +46,21 @@ Key columns:
 | `created_at` | `Timestamp` | When the prediction was created |
 | `started_at` | `Timestamp` | When the model began processing |
 | `completed_at` | `Timestamp` | When the prediction finished |
+| `source` | `Utf8` | How the prediction was created — `"api"` or `"web"` |
 | `input` | `Json` | Model-specific input parameters |
 | `output` | `Json` | Model-specific output (URL, string, or object) |
 | `error` | `Utf8` | Error message when `status = 'failed'` |
 | `metrics__total_time` | `Float64` | Total wall-clock duration in seconds |
 | `data_removed` | `Boolean` | True when output data has been deleted by retention policy |
+| `created_after` | `Utf8` (Virtual) | Filter predictions created after this ISO 8601 timestamp (pushdown) |
+| `created_before` | `Utf8` (Virtual) | Filter predictions created before this ISO 8601 timestamp (pushdown) |
 
 ### `replicate.models`
 
 Global public model catalog. All public models are returned; private models
-are excluded. Supports optional `sort_by` and `sort_direction` filters.
+are excluded. Supports optional `sort_by` and `sort_direction` filters. Results
+are limited to the first page (up to 100 models) because Replicate's full-URL
+pagination is not supported.
 
 | Filter | Values | Description |
 |---|---|---|
@@ -66,13 +71,15 @@ are excluded. Supports optional `sort_by` and `sort_direction` filters.
 
 Account-scoped deployments with current release details. The `release_hardware`
 column contains the hardware SKU — join against `replicate.hardware` on `sku`
-to get the human-readable name.
+to get the human-readable name. Results are limited to the first page (up to 100
+deployments) because Replicate's full-URL pagination is not supported.
 
 ### `replicate.collections`
 
 Curated collections grouping models by theme. Only three fields are returned
 by the list endpoint (`name`, `slug`, `description`). Browse models in a
-collection at `replicate.com/collections/<slug>`.
+collection at `replicate.com/collections/<slug>`. Results are limited to the first
+page (up to 100 collections) because Replicate's full-URL pagination is not supported.
 
 ### `replicate.hardware`
 
@@ -111,6 +118,21 @@ FROM replicate.predictions
 WHERE status = 'failed'
 ORDER BY created_at DESC
 LIMIT 50;
+```
+
+### Filter predictions by creation source and date range (upstream pushdown)
+
+```sql
+SELECT
+  id,
+  model,
+  status,
+  created_at
+FROM replicate.predictions
+WHERE source = 'api'
+  AND created_after = '2026-05-01T00:00:00Z'
+  AND created_before = '2026-05-20T23:59:59Z'
+ORDER BY created_at DESC;
 ```
 
 ### Browse recently updated public models
@@ -157,6 +179,6 @@ FROM replicate.hardware;
 ## Auth
 
 This source uses the `Authorization: Bearer <token>` header with a Replicate
-API token. See the
+API token. The source only performs read-only GET requests, and any valid Replicate API token is sufficient. See the
 [Replicate API reference](https://replicate.com/docs/reference/http) for full
 documentation on authentication and API tokens.

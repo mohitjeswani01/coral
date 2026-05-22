@@ -15,7 +15,9 @@ inputs:
     hint: |
       Your Replicate API token. Generate one at:
       https://replicate.com/account/api-tokens → New API token.
-      A read-only token is sufficient for all tables in this source.
+      This source only performs read-only GET requests. Any Replicate API
+      token is sufficient — Replicate does not provide scoped or read-only
+      token variants.
       Docs: https://replicate.com/docs/reference/http
 
 auth:
@@ -37,7 +39,8 @@ tables:
   # replicate.predictions — AI inference history for the authenticated user
   # GET /v1/predictions
   # Response: {next, previous, results: [...]}
-  # Pagination: cursor_query — next field contains a full URL with ?cursor=
+  # Pagination: none — limited to first page (max 100 results) because Replicate
+  # returns full URLs for pagination, which is not yet supported by Coral.
   # Scoped to the authenticated user automatically; no filter required.
   # ────────────────────────────────────────────────────────────────────────
   - name: predictions
@@ -45,7 +48,9 @@ tables:
       All predictions (inference runs) made by the authenticated Replicate user.
       Each row is one model invocation. Includes model identifier, status,
       timing, input and output payloads (as JSON), logs, and error details.
-      Scoped to the authenticated account — no filter required.
+      Scoped to the authenticated account. Results are limited to the first
+      page (up to 100 items) because Replicate's full-URL pagination is not
+      yet supported.
     guide: |
       Start with `SELECT id, model, status, created_at FROM replicate.predictions LIMIT 10`.
       `status` is one of: starting, processing, succeeded, failed, canceled, aborted.
@@ -54,19 +59,36 @@ tables:
       `input` and `output` are JSON — their shape varies per model.
       `metrics__total_time` is the total wall-clock time in seconds.
       `data_removed` is true when Replicate has deleted the prediction output.
-      Predictions are returned newest-first.
+      Predictions are returned newest-first. Note that query results are
+      limited to the first page (max 100 predictions). To filter predictions
+      upstream, use the `created_after`, `created_before`, or `source` filters
+      (e.g., `WHERE source = 'api' AND created_after = '2026-05-01T00:00:00Z'`).
+    filters:
+      - name: created_after
+        required: false
+      - name: created_before
+        required: false
+      - name: source
+        required: false
     request:
       method: GET
       path: /predictions
+      query:
+        - name: created_after
+          from: filter
+          key: created_after
+        - name: created_before
+          from: filter
+          key: created_before
+        - name: source
+          from: filter
+          key: source
     response:
       rows_path:
         - results
       row_strategy: direct
     pagination:
-      mode: cursor_query
-      cursor_param: cursor
-      response_cursor_path:
-        - next
+      mode: none
       page_size:
         default: 100
         max: 100
@@ -256,11 +278,34 @@ tables:
             - urls
             - cancel
 
+      - name: created_after
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Filter predictions created after this ISO 8601 timestamp (e.g. '2026-05-01T00:00:00Z').
+          Applied as a query parameter — not returned in the response.
+        expr:
+          kind: from_filter
+          key: created_after
+
+      - name: created_before
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Filter predictions created before this ISO 8601 timestamp (e.g. '2026-05-31T23:59:59Z').
+          Applied as a query parameter — not returned in the response.
+        expr:
+          kind: from_filter
+          key: created_before
+
   # ────────────────────────────────────────────────────────────────────────
   # replicate.models — global public ML model catalog
   # GET /v1/models
   # Response: {next, previous, results: [...]}
-  # Pagination: cursor_query — same next-URL pattern as predictions
+  # Pagination: none — limited to first page (max 100 results) because Replicate
+  # returns full URLs for pagination, which is not yet supported by Coral.
   # Global public catalog — no filter required. Optional sort filters.
   # ────────────────────────────────────────────────────────────────────────
   - name: models
@@ -269,6 +314,8 @@ tables:
       Includes owner, name, description, visibility, run count, and URLs.
       Use `is_official = true` to find Replicate-maintained models.
       Use optional `sort_by` and `sort_direction` filters to control ordering.
+      Results are limited to the first page (up to 100 items) because Replicate's
+      full-URL pagination is not yet supported.
     guide: |
       Start with `SELECT owner, name, run_count, description FROM replicate.models LIMIT 20`.
       `visibility` is "public" or "private". Only public models appear here.
@@ -299,10 +346,7 @@ tables:
         - results
       row_strategy: direct
     pagination:
-      mode: cursor_query
-      cursor_param: cursor
-      response_cursor_path:
-        - next
+      mode: none
       page_size:
         default: 100
         max: 100
@@ -459,7 +503,8 @@ tables:
   # replicate.deployments — account-scoped model deployments
   # GET /v1/deployments
   # Response: {next, previous, results: [...]}
-  # Pagination: cursor_query — same next-URL pattern as predictions
+  # Pagination: none — limited to first page (max 100 results) because Replicate
+  # returns full URLs for pagination, which is not yet supported by Coral.
   # Scoped to the authenticated account; no filter required.
   # current_release nested fields are flattened with double-underscore prefix.
   # ────────────────────────────────────────────────────────────────────────
@@ -468,7 +513,9 @@ tables:
       Model deployments configured for the authenticated Replicate account.
       Each row is one deployment and includes its current release configuration:
       the model, version, hardware SKU, and auto-scaling settings. Scoped to
-      the authenticated account — no filter required.
+      the authenticated account — no filter required. Results are limited to the
+      first page (up to 100 items) because Replicate's full-URL pagination is not
+      yet supported.
     guide: |
       Start with `SELECT owner, name, release_model, release_hardware FROM replicate.deployments`.
       `release_hardware` is a hardware SKU string (e.g. gpu-t4, gpu-a40-small).
@@ -485,10 +532,7 @@ tables:
         - results
       row_strategy: direct
     pagination:
-      mode: cursor_query
-      cursor_param: cursor
-      response_cursor_path:
-        - next
+      mode: none
       page_size:
         default: 100
         max: 100
@@ -623,7 +667,8 @@ tables:
   # replicate.collections — curated model groups (global, public)
   # GET /v1/collections
   # Response: {next, previous, results: [...]}
-  # Pagination: cursor_query — same next-URL pattern as predictions
+  # Pagination: none — limited to first page (max 100 results) because Replicate
+  # returns full URLs for pagination, which is not yet supported by Coral.
   # Global public catalog; no filter required.
   # ────────────────────────────────────────────────────────────────────────
   - name: collections
@@ -631,6 +676,8 @@ tables:
       Curated collections of models on Replicate. Each collection groups related
       models under a theme (e.g. "super-resolution", "text-to-image").
       Use `slug` to reference a collection in the Replicate UI or API.
+      Results are limited to the first page (up to 100 items) because Replicate's
+      full-URL pagination is not yet supported.
     guide: |
       Start with `SELECT name, slug, description FROM replicate.collections`.
       Collections are maintained by Replicate to group models by task or theme.
@@ -644,10 +691,7 @@ tables:
         - results
       row_strategy: direct
     pagination:
-      mode: cursor_query
-      cursor_param: cursor
-      response_cursor_path:
-        - next
+      mode: none
       page_size:
         default: 100
         max: 100
