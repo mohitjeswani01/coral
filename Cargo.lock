@@ -984,6 +984,7 @@ version = "0.2.1"
 dependencies = [
  "arrow",
  "axum",
+ "base64",
  "chrono",
  "coral-api",
  "coral-auth-aws",
@@ -1002,6 +1003,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "tempfile",
  "thiserror",
  "tokio",
@@ -1015,6 +1017,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "url",
  "uuid",
 ]
 
@@ -1066,6 +1069,7 @@ dependencies = [
  "arrow",
  "coral-api",
  "coral-app",
+ "coral-spec",
  "http-body 1.0.1",
  "opentelemetry",
  "opentelemetry_sdk",
@@ -5985,7 +5989,9 @@ dependencies = [
  "coral-spec",
  "insta",
  "pulldown-cmark",
+ "serde",
  "serde_json",
+ "serde_yaml",
  "walkdir",
 ]
 

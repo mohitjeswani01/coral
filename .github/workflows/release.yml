@@ -29,7 +29,7 @@ jobs:
       - name: Detect UI package
         id: detect-ui
         run: |
-          if [ -f ui/package-lock.json ]; then
+          if [ -f ui/package.json ]; then
             echo "has-ui=true" >> "$GITHUB_OUTPUT"
           else
             echo "has-ui=false" >> "$GITHUB_OUTPUT"
@@ -38,7 +38,7 @@ jobs:
         if: steps.detect-ui.outputs.has-ui == 'true'
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
         with:
-          node-version: 22
+          node-version-file: ui/.node-version
           package-manager-cache: false
       - name: Install UI dependencies
         if: steps.detect-ui.outputs.has-ui == 'true'
@@ -46,6 +46,9 @@ jobs:
       - name: Build UI
         if: steps.detect-ui.outputs.has-ui == 'true'
         run: npm run build --prefix ui
+      - name: Verify UI entrypoint
+        if: steps.detect-ui.outputs.has-ui == 'true'
+        run: test -s ui/dist/index.html
       - name: Upload UI artifact
         if: steps.detect-ui.outputs.has-ui == 'true'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
