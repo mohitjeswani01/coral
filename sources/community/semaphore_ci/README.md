@@ -1,8 +1,12 @@
 # Semaphore CI Source
 
 Query CI/CD data from [Semaphore CI](https://semaphoreci.com) — workflows,
-pipelines, and promotions for your projects. Read-only; uses the
-[v1alpha REST API](https://docs.semaphoreci.com/reference/api).
+pipelines, and promotions for your projects. All tables require a
+`project_id` or `pipeline_id` filter — Semaphore's v1alpha API does not
+expose a list-projects endpoint, so obtain IDs from the Semaphore
+dashboard or `sem` CLI. Read-only; cloud-only (assumes `*.semaphoreci.com`).
+
+API docs: https://docs.semaphoreci.com/reference/api
 
 ## Setup
 
@@ -61,36 +65,45 @@ tag, pull request, or manual rerun.
 | `branch_name` | Utf8 | Git branch name |
 | `branch_id` | Utf8 | Semaphore branch UUID |
 | `commit_sha` | Utf8 | Git commit SHA |
-| `triggered_by` | Utf8 | Trigger source (integer enum or string) |
+| `triggered_by` | Int64 | Trigger source (integer enum, e.g. 1 = hook) |
 | `rerun_of` | Utf8 | Original workflow UUID if rerun |
 | `created_at` | Timestamp | Workflow creation time (UTC) |
 
 **Required filter:** `project_id`
-**Optional filter:** `branch_name`
+**Optional filters:** `branch_name`, `created_after`, `created_before`
 **Pagination:** Link header
 
 ---
 
 ### pipelines
 
-Pipelines for a project. Each row is one pipeline execution within a
-workflow.
+Pipelines for a project or workflow. Each row is one pipeline execution
+within a workflow. Pass `project_id` or `wf_id` (or both) — the API
+requires at least one.
 
 | Column | Type | Description |
 |---|---|---|
-| `project_id` | Utf8 | Project ID (required filter) |
+| `project_id` | Utf8 | Project ID (echoed when provided) |
 | `ppl_id` | Utf8 | Pipeline UUID (may be absent in list) |
 | `name` | Utf8 | Pipeline name from YAML config |
 | `yaml_file_name` | Utf8 | YAML file defining this pipeline |
 | `working_directory` | Utf8 | Pipeline working directory |
 | `wf_id` | Utf8 | Parent workflow UUID |
-| `state` | Utf8 | State (running, done, stopping) |
+| `state` | Utf8 | State (pending, queuing, running, stopping, done) |
 | `result` | Utf8 | Result (passed, failed, stopped, canceled) |
+| `result_reason` | Utf8 | Reason for the result (e.g. test, malformed_yaml) |
+| `error_description` | Utf8 | Error details for config/system failures |
 | `branch_name` | Utf8 | Git branch name |
 | `created_at` | Timestamp | Pipeline creation time (UTC) |
+| `pending_at` | Timestamp | Time entered pending state (UTC) |
+| `queuing_at` | Timestamp | Time entered queuing state (UTC) |
+| `running_at` | Timestamp | Time pipeline started running (UTC) |
+| `stopping_at` | Timestamp | Time pipeline began stopping (UTC) |
+| `done_at` | Timestamp | Time pipeline finished (UTC) |
 
-**Required filter:** `project_id`
-**Optional filters:** `wf_id`, `branch_name`
+**Required filter:** at least one of `project_id` or `wf_id`
+**Optional filters:** `branch_name`, `yml_file_path`, `created_after`,
+`created_before`, `done_after`, `done_before`
 **Pagination:** Link header
 
 ---
@@ -108,6 +121,10 @@ Promotions triggered from a pipeline (e.g. deploy to staging/production).
 
 **Required filter:** `pipeline_id`
 **Pagination:** None
+
+> **Note:** The promotions list endpoint only returns `name`, `status`,
+> and `triggered_by`. Timestamp and auto-promotion metadata are not
+> exposed by this endpoint.
 
 ---
 
@@ -129,17 +146,16 @@ FROM semaphore_ci.workflows
 WHERE project_id = 'your-project-uuid'
 LIMIT 10;
 
--- Find failed pipelines
+-- Find failed pipelines (use LOWER for case-safe comparison)
 SELECT name, state, result, branch_name, created_at
 FROM semaphore_ci.pipelines
 WHERE project_id = 'your-project-uuid'
-  AND result = 'FAILED';
+  AND LOWER(result) = 'failed';
 
 -- Filter pipelines by workflow ID
 SELECT name, state, result, yaml_file_name
 FROM semaphore_ci.pipelines
-WHERE project_id = 'your-project-uuid'
-  AND wf_id = 'your-workflow-uuid';
+WHERE wf_id = 'your-workflow-uuid';
 
 -- Find pipelines by branch name
 SELECT name, state, result, created_at
@@ -166,12 +182,19 @@ WHERE pipeline_id = 'your-pipeline-uuid';
 - **No projects endpoint**: The Semaphore v1alpha API does not provide a
   `GET /projects` endpoint. Obtain your `project_id` from the Semaphore
   dashboard (Project Settings) or CLI (`sem get project`).
+- **Cloud-only**: The `base_url` assumes `*.semaphoreci.com`. Semaphore
+  Enterprise users on a custom domain would need to fork and adjust.
 - **Read-only**: This source only uses GET endpoints. No create, update,
   or delete operations.
-- **Timestamps**: The API returns `created_at` as a protobuf-style
-  `{seconds, nanos}` object. This source extracts the `seconds` field
-  and exposes it as a UTC `Timestamp` column.
+- **Timestamps**: The API returns timestamps as protobuf-style
+  `{seconds, nanos}` objects. This source extracts the `seconds` field
+  and exposes each as a UTC `Timestamp` column. The pipelines table
+  exposes `created_at`, `pending_at`, `queuing_at`, `running_at`,
+  `stopping_at`, and `done_at` for build-duration analysis.
 - **Case inconsistency**: The `state` and `result` fields may use different
-  casing between list and describe responses (e.g. `DONE` vs `done`,
-  `FAILED` vs `failed`). Use case-insensitive comparisons when filtering.
+  casing between API responses (e.g. `DONE` vs `done`, `FAILED` vs
+  `failed`). Use `LOWER(result)` or `UPPER(state)` for reliable filtering.
+- **Pipelines require at least one filter**: The Semaphore API requires
+  either `project_id` or `wf_id` (or both) on the pipelines endpoint.
+  Queries without either will fail at the API level.
 - **API docs**: https://docs.semaphoreci.com/reference/api
