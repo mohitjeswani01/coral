@@ -25,105 +25,12 @@ auth:
       template: Bearer {{input.DUB_API_KEY}}
 
 test_queries:
-  - SELECT * FROM dub.workspaces LIMIT 5
   - SELECT id, domain, key, url, clicks, leads, created_at FROM dub.links LIMIT 10
   - SELECT * FROM dub.domains LIMIT 10
   - SELECT * FROM dub.tags LIMIT 10
 
 tables:
-  # ------------------------------------------------------------------
-  # dub.workspaces — workspace metadata
-  # GET /workspaces
-  # Root JSON array. No pagination needed (key is workspace-scoped).
-  # ------------------------------------------------------------------
-  - name: workspaces
-    description: >-
-      Workspace metadata for the workspace associated with the API key.
-      Returns workspace identity, plan, usage stats, and team members.
-      Use this as the entry point to confirm your API key is working and
-      to discover workspace-level metadata.
-    guide: |
-      No filters required — the API key is scoped to a single workspace.
-      Start with `SELECT * FROM dub.workspaces LIMIT 1` to verify
-      connectivity and discover the workspace id, slug, and plan.
-    request:
-      method: GET
-      path: /workspaces
-    response: {}
-    pagination:
-      mode: none
-    columns:
-      - name: id
-        type: Utf8
-        nullable: false
-        description: Workspace ID (prefixed with ws_).
-        expr:
-          kind: path
-          path:
-            - id
-      - name: name
-        type: Utf8
-        nullable: false
-        description: Workspace display name.
-        expr:
-          kind: path
-          path:
-            - name
-      - name: slug
-        type: Utf8
-        nullable: false
-        description: URL-friendly workspace identifier used in dashboard URLs.
-        expr:
-          kind: path
-          path:
-            - slug
-      - name: logo
-        type: Utf8
-        nullable: true
-        description: URL of the workspace logo image.
-        expr:
-          kind: path
-          path:
-            - logo
-      - name: plan
-        type: Utf8
-        nullable: true
-        description: Subscription plan (e.g. free, pro, business, enterprise).
-        expr:
-          kind: path
-          path:
-            - plan
-      - name: usage
-        type: Json
-        nullable: true
-        description: >-
-          Usage statistics for the workspace relative to plan limits.
-          Use SQL JSON functions to inspect.
-        expr:
-          kind: path
-          path:
-            - usage
-      - name: users
-        type: Json
-        nullable: true
-        description: >-
-          Team members associated with the workspace.
-          Use SQL JSON functions to inspect.
-        expr:
-          kind: path
-          path:
-            - users
-      - name: created_at
-        type: Timestamp
-        nullable: true
-        description: When the workspace was created (ISO 8601).
-        expr:
-          kind: format_timestamp
-          input: iso8601
-          expr:
-            kind: path
-            path:
-              - createdAt
+
 
   # ------------------------------------------------------------------
   # dub.links — short links with analytics
@@ -148,6 +55,8 @@ tables:
       - name: show_archived
       - name: tag_ids
       - name: folder_id
+      - name: sort_by
+      - name: sort_order
     request:
       method: GET
       path: /links
@@ -167,6 +76,12 @@ tables:
         - name: folderId
           from: filter
           key: folder_id
+        - name: sortBy
+          from: filter
+          key: sort_by
+        - name: sortOrder
+          from: filter
+          key: sort_order
     response: {}
     pagination:
       mode: page
@@ -252,7 +167,7 @@ tables:
             - workspaceId
       - name: user_id
         type: Utf8
-        nullable: false
+        nullable: true
         description: User ID of the link creator.
         expr:
           kind: path
@@ -461,28 +376,68 @@ tables:
             kind: path
             path:
               - updatedAt
+      - name: sort_by
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Field to sort links by (createdAt, clicks, saleAmount, lastClicked).
+        expr:
+          kind: from_filter
+          key: sort_by
+      - name: sort_order
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Sort direction (asc, desc).
+        expr:
+          kind: from_filter
+          key: sort_order
 
   # ------------------------------------------------------------------
   # dub.domains — custom domains
   # GET /domains
-  # Root JSON array. No pagination needed (typically small list).
+  # Root JSON array. Page-based pagination (page + pageSize).
   # ------------------------------------------------------------------
   - name: domains
     description: >-
       Custom domains registered in the workspace. Returns domain name,
-      verification status, and configuration. Useful for auditing domain
-      setup and discovering available domains for link creation.
+      verification status, deep link settings, and configuration.
     guide: |
-      No filters required. Start with `SELECT * FROM dub.domains` to see
-      all domains. The `primary` column indicates the default domain for
-      new links. The `verified` column shows DNS verification status.
+      No required filters. Start with `SELECT * FROM dub.domains` to see
+      all domains. Use `WHERE search = 'yourdomain'` to filter by name.
+      Use `WHERE archived = true` to include archived domains.
+    filters:
+      - name: archived
+      - name: search
     request:
       method: GET
       path: /domains
+      query:
+        - name: archived
+          from: filter_bool
+          key: archived
+        - name: search
+          from: filter
+          key: search
     response: {}
     pagination:
-      mode: none
+      mode: page
+      page_param: page
+      page_start: 1
+      page_step: 1
+      page_size:
+        default: 100
+        max: 100
+        query_param: pageSize
     columns:
+      - name: id
+        type: Utf8
+        nullable: true
+        description: Unique domain identifier.
+        expr:
+          kind: path
+          path:
+            - id
       - name: slug
         type: Utf8
         nullable: false
@@ -515,22 +470,6 @@ tables:
           kind: path
           path:
             - archived
-      - name: target
-        type: Utf8
-        nullable: true
-        description: Root domain redirect URL.
-        expr:
-          kind: path
-          path:
-            - target
-      - name: type
-        type: Utf8
-        nullable: true
-        description: Redirect type for the root domain.
-        expr:
-          kind: path
-          path:
-            - type
       - name: placeholder
         type: Utf8
         nullable: true
@@ -539,6 +478,46 @@ tables:
           kind: path
           path:
             - placeholder
+      - name: expired_url
+        type: Utf8
+        nullable: true
+        description: URL to redirect to after a link on this domain has expired.
+        expr:
+          kind: path
+          path:
+            - expiredUrl
+      - name: not_found_url
+        type: Utf8
+        nullable: true
+        description: URL to redirect to when a link on this domain is not found.
+        expr:
+          kind: path
+          path:
+            - notFoundUrl
+      - name: logo
+        type: Utf8
+        nullable: true
+        description: URL of the domain logo image.
+        expr:
+          kind: path
+          path:
+            - logo
+      - name: asset_links
+        type: Utf8
+        nullable: true
+        description: Android App Links configuration (JSON string).
+        expr:
+          kind: path
+          path:
+            - assetLinks
+      - name: apple_app_site_association
+        type: Utf8
+        nullable: true
+        description: iOS Universal Links configuration (JSON string).
+        expr:
+          kind: path
+          path:
+            - appleAppSiteAssociation
       - name: registered_domain
         type: Json
         nullable: true
