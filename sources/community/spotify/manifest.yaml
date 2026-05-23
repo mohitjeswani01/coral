@@ -1,0 +1,835 @@
+name: spotify
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query playlists, saved tracks, top artists, and top tracks from Spotify
+  using OAuth 2.0 authorization-code with PKCE. All data is read-only and
+  scoped to the authenticated Spotify user.
+base_url: https://api.spotify.com
+
+inputs:
+  SPOTIFY_TOKEN:
+    kind: secret
+    hint: |
+      Spotify OAuth access token with read-only scopes. Click
+      "Connect with Spotify" to authorize through the browser — Coral
+      will handle the PKCE flow and store the token automatically.
+
+      You must supply your own Spotify app Client ID. Create a Spotify
+      app at https://developer.spotify.com/dashboard, add
+      http://127.0.0.1:53682/oauth/callback as an allowed redirect URI
+      (do not use localhost — Spotify requires the loopback IP literal),
+      copy the Client ID, and set SPOTIFY_CLIENT_ID before running
+      source add.
+
+      Note: apps in Development Mode are limited to 5 authenticated
+      users. Extended Quota Mode is required for broader access and is
+      available only to registered organizations.
+    credential:
+      methods:
+        - type: oauth
+          label: Connect with Spotify
+          oauth:
+            flow:
+              type: authorization_code
+              pkce: required
+            redirect_uri: http://127.0.0.1:53682/oauth/callback
+            endpoints:
+              authorization_url: https://accounts.spotify.com/authorize
+              token_url: https://accounts.spotify.com/api/token
+            client:
+              id:
+                input: SPOTIFY_CLIENT_ID
+            scopes:
+              scope:
+                delimiter: space
+                values:
+                  - playlist-read-private
+                  - playlist-read-collaborative
+                  - user-library-read
+                  - user-top-read
+        - type: source_config
+          label: Paste access token
+
+  SPOTIFY_CLIENT_ID:
+    kind: variable
+    hint: |
+      Your Spotify app Client ID (not the client secret). Find it in the
+      Spotify Developer Dashboard at https://developer.spotify.com/dashboard
+      after creating or selecting an app. Make sure
+      http://127.0.0.1:53682/oauth/callback is listed as a redirect URI
+      in that app's settings.
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.SPOTIFY_TOKEN}}
+
+test_queries:
+  - SELECT id, name, tracks_total FROM spotify.playlists LIMIT 1
+  - SELECT track_id, track_name, artist_name FROM spotify.saved_tracks LIMIT 1
+  - SELECT id, name, popularity FROM spotify.top_artists LIMIT 1
+
+tables:
+  # ──────────────────────────────────────────────────────────────────────────
+  # playlists — current user's playlists
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: playlists
+    description: >-
+      Playlists owned by or followed by the authenticated Spotify user.
+      Returns both public and private playlists, and collaborative
+      playlists the user follows. Paginated up to 50 per page.
+    guide: |
+      Each row is one simplified playlist object. `id` is the Spotify
+      playlist ID. `tracks_total` is the number of tracks in the playlist
+      — it is a nested field (tracks.total in the API response).
+      `owner_id` and `owner_name` identify the playlist creator.
+      `public` can be true, false, or null. `description` is null for
+      unmodified or unverified playlists.
+      Use `id` to fetch full track details via the Spotify API.
+    request:
+      method: GET
+      path: /v1/me/playlists
+    response:
+      rows_path:
+        - items
+    pagination:
+      mode: offset
+      offset_param: offset
+      offset_start: 0
+      page_size:
+        default: 20
+        max: 50
+        query_param: limit
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Spotify playlist ID.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: false
+        description: Playlist name.
+        expr:
+          kind: path
+          path:
+            - name
+      - name: description
+        type: Utf8
+        nullable: true
+        description: >-
+          Playlist description. Only populated for modified or verified
+          playlists; null otherwise.
+        expr:
+          kind: path
+          path:
+            - description
+      - name: public
+        type: Boolean
+        nullable: true
+        description: >-
+          Whether the playlist is public (true), private (false), or
+          status is not relevant (null).
+        expr:
+          kind: path
+          path:
+            - public
+      - name: collaborative
+        type: Boolean
+        nullable: false
+        description: Whether the owner allows other users to modify the playlist.
+        expr:
+          kind: path
+          path:
+            - collaborative
+      - name: snapshot_id
+        type: Utf8
+        nullable: true
+        description: >-
+          Snapshot version identifier. Changes whenever the playlist is
+          modified. Use to detect playlist mutations.
+        expr:
+          kind: path
+          path:
+            - snapshot_id
+      - name: tracks_total
+        type: Int64
+        nullable: true
+        description: >-
+          Number of tracks in the playlist. Sourced from the nested
+          tracks.total field in the Spotify API response.
+        expr:
+          kind: path
+          path:
+            - tracks
+            - total
+      - name: owner_id
+        type: Utf8
+        nullable: true
+        description: Spotify user ID of the playlist owner.
+        expr:
+          kind: path
+          path:
+            - owner
+            - id
+      - name: owner_name
+        type: Utf8
+        nullable: true
+        description: Display name of the playlist owner.
+        expr:
+          kind: path
+          path:
+            - owner
+            - display_name
+      - name: uri
+        type: Utf8
+        nullable: true
+        description: Spotify URI for the playlist (spotify:playlist:<id>).
+        expr:
+          kind: path
+          path:
+            - uri
+      - name: href
+        type: Utf8
+        nullable: true
+        description: Web API link to the full playlist object.
+        expr:
+          kind: path
+          path:
+            - href
+      - name: external_url
+        type: Utf8
+        nullable: true
+        description: Spotify open URL for the playlist.
+        expr:
+          kind: path
+          path:
+            - external_urls
+            - spotify
+      - name: image_url
+        type: Utf8
+        nullable: true
+        description: URL of the first (largest) playlist cover image.
+        expr:
+          kind: first_array_item_path
+          path:
+            - images
+          item_path:
+            - url
+      - name: images
+        type: Json
+        nullable: true
+        description: >-
+          Full images array. Each object contains url, height, and width.
+          Up to three images are returned by Spotify, widest first.
+        expr:
+          kind: path
+          path:
+            - images
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # saved_tracks — tracks saved to the user's library
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: saved_tracks
+    description: >-
+      Tracks saved to the authenticated user's "Liked Songs" library,
+      ordered by most recently added. Each row is one saved track with
+      full track metadata, primary artist fields, and album fields.
+      Paginated up to 50 per page.
+    guide: |
+      Each row corresponds to one item in the Spotify API response. The
+      API wraps each track in a SavedTrackObject (added_at + track), so
+      all track fields are accessed through the nested track object.
+      `added_at` is the ISO 8601 time the track was saved.
+      `artist_name` and `artist_id` reflect the first listed artist.
+      Use `artists` (Json) for the complete artist list.
+      `album_image_url` is the first (largest) album cover image URL.
+    request:
+      method: GET
+      path: /v1/me/tracks
+    response:
+      rows_path:
+        - items
+    pagination:
+      mode: offset
+      offset_param: offset
+      offset_start: 0
+      page_size:
+        default: 20
+        max: 50
+        query_param: limit
+    columns:
+      - name: added_at
+        type: Timestamp
+        nullable: true
+        description: ISO 8601 timestamp when the track was added to the library.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - added_at
+      - name: track_id
+        type: Utf8
+        nullable: false
+        description: Spotify track ID.
+        expr:
+          kind: path
+          path:
+            - track
+            - id
+      - name: track_name
+        type: Utf8
+        nullable: false
+        description: Track title.
+        expr:
+          kind: path
+          path:
+            - track
+            - name
+      - name: duration_ms
+        type: Int64
+        nullable: true
+        description: Track length in milliseconds.
+        expr:
+          kind: path
+          path:
+            - track
+            - duration_ms
+      - name: explicit
+        type: Boolean
+        nullable: true
+        description: Whether the track has explicit lyrics.
+        expr:
+          kind: path
+          path:
+            - track
+            - explicit
+      - name: popularity
+        type: Int64
+        nullable: true
+        description: Track popularity score from 0 (low) to 100 (high).
+        expr:
+          kind: path
+          path:
+            - track
+            - popularity
+      - name: track_number
+        type: Int64
+        nullable: true
+        description: Track number on its album.
+        expr:
+          kind: path
+          path:
+            - track
+            - track_number
+      - name: disc_number
+        type: Int64
+        nullable: true
+        description: Disc number the track belongs to (usually 1).
+        expr:
+          kind: path
+          path:
+            - track
+            - disc_number
+      - name: is_local
+        type: Boolean
+        nullable: true
+        description: Whether the track is a local file rather than a Spotify track.
+        expr:
+          kind: path
+          path:
+            - track
+            - is_local
+      - name: track_uri
+        type: Utf8
+        nullable: true
+        description: Spotify URI for the track (spotify:track:<id>).
+        expr:
+          kind: path
+          path:
+            - track
+            - uri
+      - name: track_url
+        type: Utf8
+        nullable: true
+        description: Spotify open URL for the track.
+        expr:
+          kind: path
+          path:
+            - track
+            - external_urls
+            - spotify
+      - name: isrc
+        type: Utf8
+        nullable: true
+        description: International Standard Recording Code for the track.
+        expr:
+          kind: path
+          path:
+            - track
+            - external_ids
+            - isrc
+      - name: artist_id
+        type: Utf8
+        nullable: true
+        description: Spotify ID of the primary (first-listed) artist.
+        expr:
+          kind: first_array_item_path
+          path:
+            - track
+            - artists
+          item_path:
+            - id
+      - name: artist_name
+        type: Utf8
+        nullable: true
+        description: Name of the primary (first-listed) artist.
+        expr:
+          kind: first_array_item_path
+          path:
+            - track
+            - artists
+          item_path:
+            - name
+      - name: artists
+        type: Json
+        nullable: true
+        description: >-
+          Full artists array for this track. Each object contains id,
+          name, type, uri, and external_urls.
+        expr:
+          kind: path
+          path:
+            - track
+            - artists
+      - name: album_id
+        type: Utf8
+        nullable: true
+        description: Spotify ID of the album this track belongs to.
+        expr:
+          kind: path
+          path:
+            - track
+            - album
+            - id
+      - name: album_name
+        type: Utf8
+        nullable: true
+        description: Album name.
+        expr:
+          kind: path
+          path:
+            - track
+            - album
+            - name
+      - name: album_release_date
+        type: Utf8
+        nullable: true
+        description: >-
+          Album release date. Format varies (YYYY, YYYY-MM, or
+          YYYY-MM-DD) depending on the precision Spotify reports.
+        expr:
+          kind: path
+          path:
+            - track
+            - album
+            - release_date
+      - name: album_total_tracks
+        type: Int64
+        nullable: true
+        description: Total number of tracks on the album.
+        expr:
+          kind: path
+          path:
+            - track
+            - album
+            - total_tracks
+      - name: album_image_url
+        type: Utf8
+        nullable: true
+        description: URL of the first (largest) album cover image.
+        expr:
+          kind: first_array_item_path
+          path:
+            - track
+            - album
+            - images
+          item_path:
+            - url
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # top_artists — user's top artists by listening affinity
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: top_artists
+    description: >-
+      The authenticated user's top artists ordered by listening affinity.
+      Affinity is calculated over the period defined by time_range.
+      Returns up to 50 artists per time range. Paginated up to 50 per page.
+    guide: |
+      Each row is one full Spotify artist object. `popularity` is a
+      0–100 score. `followers_total` is sourced from the nested
+      followers.total field. `genres` is a Json array of genre strings;
+      `genres_joined` exposes the same data as a comma-separated string
+      for simpler queries. `image_url` is the first (largest) artist
+      photo URL.
+      Filter by `time_range` to select the affinity window:
+        short_term   ≈ 4 weeks
+        medium_term  ≈ 6 months (default)
+        long_term    ≈ 1 year
+    filters:
+      - name: time_range
+        required: false
+    request:
+      method: GET
+      path: /v1/me/top/artists
+      query:
+        - name: time_range
+          from: filter
+          key: time_range
+    response:
+      rows_path:
+        - items
+    pagination:
+      mode: offset
+      offset_param: offset
+      offset_start: 0
+      page_size:
+        default: 20
+        max: 50
+        query_param: limit
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Spotify artist ID.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: false
+        description: Artist name.
+        expr:
+          kind: path
+          path:
+            - name
+      - name: popularity
+        type: Int64
+        nullable: true
+        description: Artist popularity score from 0 (low) to 100 (high).
+        expr:
+          kind: path
+          path:
+            - popularity
+      - name: followers_total
+        type: Int64
+        nullable: true
+        description: >-
+          Total Spotify follower count. Sourced from the nested
+          followers.total field in the API response.
+        expr:
+          kind: path
+          path:
+            - followers
+            - total
+      - name: genres
+        type: Json
+        nullable: true
+        description: Array of genre strings the artist is associated with.
+        expr:
+          kind: path
+          path:
+            - genres
+      - name: genres_joined
+        type: Utf8
+        nullable: true
+        description: Comma-separated genre list. Convenient for string matching.
+        expr:
+          kind: join_array
+          path:
+            - genres
+      - name: uri
+        type: Utf8
+        nullable: true
+        description: Spotify URI for the artist (spotify:artist:<id>).
+        expr:
+          kind: path
+          path:
+            - uri
+      - name: href
+        type: Utf8
+        nullable: true
+        description: Web API link to the full artist object.
+        expr:
+          kind: path
+          path:
+            - href
+      - name: external_url
+        type: Utf8
+        nullable: true
+        description: Spotify open URL for the artist.
+        expr:
+          kind: path
+          path:
+            - external_urls
+            - spotify
+      - name: image_url
+        type: Utf8
+        nullable: true
+        description: URL of the first (largest) artist photo.
+        expr:
+          kind: first_array_item_path
+          path:
+            - images
+          item_path:
+            - url
+      - name: images
+        type: Json
+        nullable: true
+        description: >-
+          Full images array. Each object contains url, height, and width.
+          Up to three sizes are returned by Spotify, widest first.
+        expr:
+          kind: path
+          path:
+            - images
+      - name: time_range_filter
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Echoes the time_range filter used for this query
+          (short_term, medium_term, or long_term).
+        expr:
+          kind: from_filter
+          key: time_range
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # top_tracks — user's top tracks by listening affinity
+  # ──────────────────────────────────────────────────────────────────────────
+  - name: top_tracks
+    description: >-
+      The authenticated user's top tracks ordered by listening affinity.
+      Affinity is calculated over the period defined by time_range.
+      Returns up to 50 tracks per time range. Paginated up to 50 per page.
+      Requires the same user-top-read scope as top_artists.
+    guide: |
+      Each row is one full Spotify track object. Field layout mirrors
+      saved_tracks without the added_at wrapper — paths start directly
+      at the top-level track fields (e.g. id, name, duration_ms).
+      `artist_name` and `artist_id` reflect the first listed artist.
+      Filter by `time_range` to select the affinity window:
+        short_term   ≈ 4 weeks
+        medium_term  ≈ 6 months (default)
+        long_term    ≈ 1 year
+    filters:
+      - name: time_range
+        required: false
+    request:
+      method: GET
+      path: /v1/me/top/tracks
+      query:
+        - name: time_range
+          from: filter
+          key: time_range
+    response:
+      rows_path:
+        - items
+    pagination:
+      mode: offset
+      offset_param: offset
+      offset_start: 0
+      page_size:
+        default: 20
+        max: 50
+        query_param: limit
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Spotify track ID.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: false
+        description: Track title.
+        expr:
+          kind: path
+          path:
+            - name
+      - name: duration_ms
+        type: Int64
+        nullable: true
+        description: Track length in milliseconds.
+        expr:
+          kind: path
+          path:
+            - duration_ms
+      - name: explicit
+        type: Boolean
+        nullable: true
+        description: Whether the track has explicit lyrics.
+        expr:
+          kind: path
+          path:
+            - explicit
+      - name: popularity
+        type: Int64
+        nullable: true
+        description: Track popularity score from 0 (low) to 100 (high).
+        expr:
+          kind: path
+          path:
+            - popularity
+      - name: track_number
+        type: Int64
+        nullable: true
+        description: Track number on its album.
+        expr:
+          kind: path
+          path:
+            - track_number
+      - name: disc_number
+        type: Int64
+        nullable: true
+        description: Disc number the track belongs to (usually 1).
+        expr:
+          kind: path
+          path:
+            - disc_number
+      - name: is_local
+        type: Boolean
+        nullable: true
+        description: Whether the track is a local file rather than a Spotify track.
+        expr:
+          kind: path
+          path:
+            - is_local
+      - name: uri
+        type: Utf8
+        nullable: true
+        description: Spotify URI for the track (spotify:track:<id>).
+        expr:
+          kind: path
+          path:
+            - uri
+      - name: track_url
+        type: Utf8
+        nullable: true
+        description: Spotify open URL for the track.
+        expr:
+          kind: path
+          path:
+            - external_urls
+            - spotify
+      - name: isrc
+        type: Utf8
+        nullable: true
+        description: International Standard Recording Code for the track.
+        expr:
+          kind: path
+          path:
+            - external_ids
+            - isrc
+      - name: artist_id
+        type: Utf8
+        nullable: true
+        description: Spotify ID of the primary (first-listed) artist.
+        expr:
+          kind: first_array_item_path
+          path:
+            - artists
+          item_path:
+            - id
+      - name: artist_name
+        type: Utf8
+        nullable: true
+        description: Name of the primary (first-listed) artist.
+        expr:
+          kind: first_array_item_path
+          path:
+            - artists
+          item_path:
+            - name
+      - name: artists
+        type: Json
+        nullable: true
+        description: >-
+          Full artists array for this track. Each object contains id,
+          name, type, uri, and external_urls.
+        expr:
+          kind: path
+          path:
+            - artists
+      - name: album_id
+        type: Utf8
+        nullable: true
+        description: Spotify ID of the album this track belongs to.
+        expr:
+          kind: path
+          path:
+            - album
+            - id
+      - name: album_name
+        type: Utf8
+        nullable: true
+        description: Album name.
+        expr:
+          kind: path
+          path:
+            - album
+            - name
+      - name: album_release_date
+        type: Utf8
+        nullable: true
+        description: >-
+          Album release date. Format varies (YYYY, YYYY-MM, or
+          YYYY-MM-DD) depending on the precision Spotify reports.
+        expr:
+          kind: path
+          path:
+            - album
+            - release_date
+      - name: album_total_tracks
+        type: Int64
+        nullable: true
+        description: Total number of tracks on the album.
+        expr:
+          kind: path
+          path:
+            - album
+            - total_tracks
+      - name: album_image_url
+        type: Utf8
+        nullable: true
+        description: URL of the first (largest) album cover image.
+        expr:
+          kind: first_array_item_path
+          path:
+            - album
+            - images
+          item_path:
+            - url
+      - name: time_range_filter
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Echoes the time_range filter used for this query
+          (short_term, medium_term, or long_term).
+        expr:
+          kind: from_filter
+          key: time_range
