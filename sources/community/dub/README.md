@@ -12,8 +12,13 @@ Query links, domains, and tags from Dub.co — the modern link attribution platf
 Requires a `DUB_API_KEY`. Generate one from:
 **Workspace Settings → API Keys → Create API Key**
 
-Keys start with `dub_` and are scoped to a single workspace — no `workspaceId`
-parameter is needed in queries.
+### Recommended Permissions
+To ensure security, generate a **restricted, server-side secret API key** instead of a publishable key. Ensure the key has at least read-only access for the following scopes:
+- `links.read`
+- `domains.read`
+- `tags.read`
+
+Keys start with `dub_` and are scoped to a single workspace — no `workspaceId` parameter is needed in queries.
 
 ```bash
 coral source add --file sources/community/dub/manifest.yaml
@@ -64,6 +69,11 @@ tags       → tag definitions (id, name, color)
 |---|---|
 | `search` | Search domains by name or slug |
 | `archived` | Set to `true` to include archived domains (default: false) |
+
+### Rate Limits & Fetch Limits
+Dub.co enforces plan-based rate limits on its API. The Free plan is limited to **60 requests/minute**. The API returns a `429 Too Many Requests` status code with rate limit headers indicating when you can retry.
+
+To prevent unbounded queries that could exhaust your rate limit, the high-cardinality `links` table has a default fetch limit of **100 links**. You can override this limit in your SQL query by specifying a `LIMIT` clause (e.g. `LIMIT 500`).
 
 ## Quick start
 

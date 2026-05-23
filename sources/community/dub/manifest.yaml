@@ -12,8 +12,12 @@ inputs:
   DUB_API_KEY:
     kind: secret
     hint: |
-      Your Dub.co API key. Generate one from:
+      Your Dub.co API key. Generate a server-side secret API key from:
       Workspace Settings → API Keys → Create API Key.
+      Ensure the key has restricted permissions with at least:
+      - links.read
+      - domains.read
+      - tags.read
       Keys start with "dub_" and are scoped to a single workspace.
       See https://dub.co/docs/api-reference/introduction
 
@@ -92,6 +96,7 @@ tables:
         default: 100
         max: 100
         query_param: pageSize
+    fetch_limit_default: 100
     columns:
       - name: id
         type: Utf8
@@ -275,14 +280,6 @@ tables:
           kind: path
           path:
             - expiredUrl
-      - name: password
-        type: Utf8
-        nullable: true
-        description: Password required to access the link destination.
-        expr:
-          kind: path
-          path:
-            - password
       - name: title
         type: Utf8
         nullable: true
@@ -426,8 +423,8 @@ tables:
       page_start: 1
       page_step: 1
       page_size:
-        default: 100
-        max: 100
+        default: 50
+        max: 50
         query_param: pageSize
     columns:
       - name: id
