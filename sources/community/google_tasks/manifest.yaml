@@ -1,0 +1,335 @@
+name: google_tasks
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query task lists and tasks from the Google Tasks API. Supports fetching
+  all your personal and shared task lists, and allows deep filtering of tasks
+  by due dates, completion status, and visibility.
+base_url: "https://tasks.googleapis.com"
+
+inputs:
+  GOOGLE_CLIENT_ID:
+    kind: variable
+    hint: |
+      Your Google Cloud Console OAuth 2.0 Desktop Application Client ID.
+      Ensure the Google Tasks API is enabled in your Google Cloud Project.
+  GOOGLE_CLIENT_SECRET:
+    kind: secret
+    hint: |
+      Your Google Cloud Console OAuth 2.0 Desktop Application Client Secret.
+  GOOGLE_TASKS_TOKEN:
+    kind: secret
+    hint: Secured OAuth access token for Google Tasks API queries.
+    credential:
+      methods:
+        - type: oauth
+          oauth:
+            flow:
+              type: authorization_code
+              pkce: disabled
+            redirect_uri: "http://127.0.0.1:0"
+            redirect_uri_port_mode: random
+            endpoints:
+              authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent"
+              token_url: "https://oauth2.googleapis.com/token"
+            client:
+              id:
+                input: GOOGLE_CLIENT_ID
+              secret:
+                input: GOOGLE_CLIENT_SECRET
+                transport: request_body
+            scopes:
+              scope:
+                delimiter: space
+                values:
+                  - "https://www.googleapis.com/auth/tasks.readonly"
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: "Bearer {{input.GOOGLE_TASKS_TOKEN}}"
+
+request_headers:
+  - name: Accept
+    from: literal
+    value: application/json
+
+test_queries:
+  - SELECT id, title, updated FROM google_tasks.task_lists LIMIT 5
+  - SELECT id, title, status FROM google_tasks.tasks WHERE tasklist_id = 'your-task-list-id' LIMIT 5
+
+tables:
+  # ------------------------------------------------------------------
+  # google_tasks.task_lists — all task lists accessible to the user
+  # GET /tasks/v1/users/@me/lists
+  # ------------------------------------------------------------------
+  - name: task_lists
+    description: >-
+      Personal and shared task lists belonging to the authenticated user.
+      Use the `id` from this table as the `tasklist_id` filter when querying the `tasks` table.
+    guide: |
+      Entry-point table. Returns all task lists visible to the authenticated user.
+      Obtain the `id` from here to query specific items in the `tasks` table.
+      Point queries by `id` are supported and will route to the single task list endpoint.
+    filters:
+      - name: id
+        required: false
+    request:
+      method: GET
+      path: /tasks/v1/users/@me/lists
+    requests:
+      - when_filters:
+          - id
+        method: GET
+        path: /tasks/v1/users/@me/lists/{{filter.id}}
+    response:
+      rows_path:
+        - items
+    pagination:
+      mode: cursor_query
+      page_size:
+        default: 100
+        max: 100
+        query_param: maxResults
+      cursor_param: pageToken
+      response_cursor_path:
+        - nextPageToken
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Unique identifier for the task list.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: title
+        type: Utf8
+        nullable: false
+        description: Title of the task list.
+        expr:
+          kind: path
+          path:
+            - title
+      - name: updated
+        type: Timestamp
+        nullable: true
+        description: Last modification time of the task list (RFC 3339 formatted).
+        expr:
+          kind: path
+          path:
+            - updated
+      - name: self_link
+        type: Utf8
+        nullable: true
+        description: URL pointing to this task list.
+        expr:
+          kind: path
+          path:
+            - selfLink
+
+  # ------------------------------------------------------------------
+  # google_tasks.tasks — task items inside a list
+  # GET /tasks/v1/lists/{tasklist}/tasks
+  # Required filter: tasklist_id (PATH param).
+  # Optional filters: show_completed, show_hidden, due_min, etc (QUERY params).
+  # ------------------------------------------------------------------
+  - name: tasks
+    description: >-
+      Individual task items contained within a designated task list.
+      Requires `tasklist_id` (from `google_tasks.task_lists.id`).
+      Optionally filter by `id` for point queries, or `show_completed`, `show_hidden`, `due_min`, etc.
+    guide: |
+      Requires `tasklist_id` — obtain it from `google_tasks.task_lists`.
+      
+      **Point Queries:** Filtering by `id` will route directly to the single task endpoint.
+      
+      **Hidden Tasks:** By default, Google Tasks API does not return hidden
+      tasks or tasks completed in first-party clients (like the web UI or mobile app).
+      To see these tasks, you MUST include the filters `show_completed = true` AND
+      `show_hidden = true`.
+      
+      **Dates:** Filters like `due_min`, `due_max`, `completed_min`, and `completed_max`
+      accept RFC 3339 formatted timestamps (e.g., `2023-10-01T00:00:00Z`).
+    filters:
+      - name: tasklist_id
+        required: true
+      - name: id
+        required: false
+      - name: show_completed
+        required: false
+      - name: show_deleted
+        required: false
+      - name: show_hidden
+        required: false
+      - name: due_min
+        required: false
+      - name: due_max
+        required: false
+      - name: completed_min
+        required: false
+      - name: completed_max
+        required: false
+      - name: updated_min
+        required: false
+    request:
+      method: GET
+      path: /tasks/v1/lists/{{filter.tasklist_id}}/tasks
+      query:
+        - name: showCompleted
+          from: filter
+          key: show_completed
+        - name: showDeleted
+          from: filter
+          key: show_deleted
+        - name: showHidden
+          from: filter
+          key: show_hidden
+        - name: dueMin
+          from: filter
+          key: due_min
+        - name: dueMax
+          from: filter
+          key: due_max
+        - name: completedMin
+          from: filter
+          key: completed_min
+        - name: completedMax
+          from: filter
+          key: completed_max
+        - name: updatedMin
+          from: filter
+          key: updated_min
+    requests:
+      - when_filters:
+          - tasklist_id
+          - id
+        method: GET
+        path: /tasks/v1/lists/{{filter.tasklist_id}}/tasks/{{filter.id}}
+    response:
+      rows_path:
+        - items
+    pagination:
+      mode: cursor_query
+      page_size:
+        default: 100
+        max: 100
+        query_param: maxResults
+      cursor_param: pageToken
+      response_cursor_path:
+        - nextPageToken
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Unique identifier for the task item.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: tasklist_id
+        type: Utf8
+        nullable: false
+        description: Virtual column mapping back to the filtered task list identifier.
+        expr:
+          kind: from_filter
+          key: tasklist_id
+      - name: title
+        type: Utf8
+        nullable: true
+        description: Title / header summary of the task item.
+        expr:
+          kind: path
+          path:
+            - title
+      - name: status
+        type: Utf8
+        nullable: false
+        description: Current structural status of the task (`needsAction` or `completed`).
+        expr:
+          kind: path
+          path:
+            - status
+      - name: due
+        type: Timestamp
+        nullable: true
+        description: Due date of the task (RFC 3339 formatted date portion, midnight UTC).
+        expr:
+          kind: path
+          path:
+            - due
+      - name: completed
+        type: Timestamp
+        nullable: true
+        description: Completion timestamp of the task (RFC 3339 formatted).
+        expr:
+          kind: path
+          path:
+            - completed
+      - name: notes
+        type: Utf8
+        nullable: true
+        description: Detailed descriptions or notes appended to the task item.
+        expr:
+          kind: path
+          path:
+            - notes
+      - name: parent
+        type: Utf8
+        nullable: true
+        description: Parent task identifier if this item acts as a subtask.
+        expr:
+          kind: path
+          path:
+            - parent
+      - name: position
+        type: Utf8
+        nullable: true
+        description: String indicating the position of the task among its sibling tasks.
+        expr:
+          kind: path
+          path:
+            - position
+      - name: deleted
+        type: Boolean
+        nullable: true
+        description: Whether the task has been deleted (only returned if `show_deleted = true`).
+        expr:
+          kind: path
+          path:
+            - deleted
+      - name: hidden
+        type: Boolean
+        nullable: true
+        description: Whether the task is hidden (only returned if `show_hidden = true`).
+        expr:
+          kind: path
+          path:
+            - hidden
+      - name: updated
+        type: Timestamp
+        nullable: true
+        description: Last modification timestamp of the task (RFC 3339 formatted).
+        expr:
+          kind: path
+          path:
+            - updated
+      - name: self_link
+        type: Utf8
+        nullable: true
+        description: URL pointing to this task.
+        expr:
+          kind: path
+          path:
+            - selfLink
+      - name: links
+        type: Json
+        nullable: true
+        description: JSON array of links to related web pages (e.g. emails in Gmail).
+        expr:
+          kind: path
+          path:
+            - links
