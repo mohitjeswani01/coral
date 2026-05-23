@@ -47,10 +47,10 @@ is needed.
 
 **Manual token path (short-lived)**: To paste a token instead of using the
 browser flow, run the source add command and choose **Paste access token** when
-prompted. `SPOTIFY_CLIENT_ID` is not required for this path. However, Spotify
-access tokens expire after **one hour** and cannot be refreshed without the
-Client ID. The paste path is intended for quick testing only — it will stop
-working after expiry.
+prompted. `SPOTIFY_CLIENT_ID` is not required for this path. However, the paste
+path bypasses the OAuth flow entirely — no refresh token is issued. Spotify
+access tokens expire after **one hour** with no way to refresh them. This path
+is intended for quick testing only.
 
 ### 4. Verify
 
@@ -212,14 +212,15 @@ cargo run -p coral-cli -- sql "SELECT table_name, column_name, data_type FROM co
   Premium subscription to use the Web API in Development Mode. This includes
   Family and Duo plans. If the subscription lapses, API calls will fail.
 - **Token expiry and refresh**: Spotify access tokens expire after one hour.
-  The OAuth browser flow issues a refresh token, which Coral uses automatically.
-  The **Paste access token** path does not issue a refresh token and will stop
-  working after one hour unless `SPOTIFY_CLIENT_ID` is also set — in which
-  case Coral can still refresh. Use the browser flow for long-lived usage.
+  The OAuth browser flow issues a refresh token, which Coral uses automatically
+  for transparent long-lived access. The **Paste access token** path bypasses
+  the OAuth flow and issues no refresh token — the token expires after one hour
+  with no refresh capability regardless of whether `SPOTIFY_CLIENT_ID` is set.
+  Use the browser flow for any usage beyond quick testing.
 - **OAuth PKCE**: Spotify requires PKCE for public clients. No client secret is
   used or stored. The `SPOTIFY_CLIENT_ID` variable holds the app's Client ID,
   which is not a credential. It can be left blank for the paste-token path,
-  but token refresh will not work without it.
+  but no refresh token is available on that path regardless.
 - **Redirect URI**: Spotify requires the loopback IP literal
   `http://127.0.0.1:53682/oauth/callback`. Add this URI exactly in your
   Spotify app dashboard. `localhost` and `127.0.0.1:0` are not accepted.

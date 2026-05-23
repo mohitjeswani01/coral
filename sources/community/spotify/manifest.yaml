@@ -62,10 +62,11 @@ inputs:
       Make sure http://127.0.0.1:53682/oauth/callback is listed as an
       allowed redirect URI in that app's settings.
 
-      Leave blank only if you are using the "Paste access token" method
-      and are managing token refresh yourself. Spotify access tokens
-      expire after one hour and cannot be refreshed without the Client
-      ID — the paste path is therefore short-lived.
+      Leave blank only if you are using the "Paste access token" method.
+      That path bypasses the OAuth flow entirely — no refresh token is issued,
+      so the pasted token will expire after one hour with no way to refresh it.
+      SPOTIFY_CLIENT_ID does not help on the paste path. Use the browser OAuth
+      flow for long-lived access.
 
 auth:
   type: HeaderAuth
