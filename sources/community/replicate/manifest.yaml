@@ -61,12 +61,15 @@ tables:
       `data_removed` is true when Replicate has deleted the prediction output.
       Predictions are returned newest-first. Note that query results are
       limited to the first page (max 100 predictions). To filter predictions
-      upstream, use the `created_after` or `created_before` filters
-      (e.g., `WHERE created_after = '2026-05-01T00:00:00Z'`).
+      upstream, use the `created_after`, `created_before`, or `source` filters
+      (e.g., `WHERE source = 'web' AND created_after = '2026-05-01T00:00:00Z'`).
+      Note: Replicate's API only supports upstream pushdown for `source = 'web'`.
     filters:
       - name: created_after
         required: false
       - name: created_before
+        required: false
+      - name: source
         required: false
     request:
       method: GET
@@ -78,6 +81,9 @@ tables:
         - name: created_before
           from: filter
           key: created_before
+        - name: source
+          from: filter
+          key: source
     response:
       rows_path:
         - results
