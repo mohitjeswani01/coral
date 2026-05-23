@@ -16,10 +16,11 @@ inputs:
       Checkly API key. Generate one from:
         User Settings  → API Keys → Create API key  (personal key)
         Account Settings → API Keys → Create API key (service key for CI/CD)
-      A read-only key is sufficient for all tables in this source.
+      This source only performs read-only GET requests. Any Checkly API key
+      is sufficient — Checkly does not provide scoped or read-only key variants.
       Docs: https://developers.checklyhq.com/docs/authentication
   CHECKLY_ACCOUNT_ID:
-    kind: variable
+    kind: secret
     hint: |
       Checkly Account ID. Find it in:
         Account Settings → General → Account ID
@@ -40,7 +41,6 @@ test_queries:
   - SELECT id, name, check_type, activated FROM checkly.checks LIMIT 5
   - SELECT id, type, send_failure FROM checkly.alert_channels LIMIT 5
   - SELECT id, custom_url, is_private FROM checkly.dashboards LIMIT 5
-  - SELECT id, has_failures, run_location, response_time FROM checkly.check_results WHERE check_id = 'replace-with-check-id' LIMIT 10
 
 tables:
   # ────────────────────────────────────────────────────────────────────────
@@ -66,9 +66,32 @@ tables:
       `locations` is a JSON array of region strings (e.g. ["us-east-1", "eu-central-1"]).
       `tags` is a JSON array of string labels.
       Use `id` values to join against checkly.check_results.check_id.
+      Use pushdown filters (such as `tag`, `check_type`, `search`, and `status`) to filter checks upstream.
+    filters:
+      - name: tag
+        required: false
+      - name: check_type
+        required: false
+      - name: search
+        required: false
+      - name: status
+        required: false
     request:
       method: GET
       path: /v1/checks
+      query:
+        - name: tag
+          from: filter
+          key: tag
+        - name: checkType
+          from: filter
+          key: check_type
+        - name: search
+          from: filter
+          key: search
+        - name: status
+          from: filter
+          key: status
     response:
       rows_path: []
       row_strategy: direct
@@ -266,6 +289,37 @@ tables:
             path:
               - updatedAt
 
+      - name: tag
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Filter checks by a specific tag. Applied as a query parameter — not returned in the response.
+        expr:
+          kind: from_filter
+          key: tag
+
+      - name: search
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Search checks by name or tag. Applied as a query parameter — not returned in the response.
+        expr:
+          kind: from_filter
+          key: search
+
+      - name: status
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Filter checks by their current status (e.g. failing, passing).
+          Applied as a query parameter — not returned in the response.
+        expr:
+          kind: from_filter
+          key: status
+
   # ────────────────────────────────────────────────────────────────────────
   # checkly.check_results — recent run results for a specific check
   # GET /v2/check-results/{checkId}   ← NOTE: v2, not v1 (v1 is deprecated)
@@ -290,6 +344,7 @@ tables:
       Use `WHERE has_failures = true` to filter for only failing runs.
       `response_time` is in milliseconds.
       `from` and `to` filters accept UNIX timestamps in seconds (not milliseconds).
+      Use `location` (e.g., 'us-east-1') and `check_type` (e.g., 'API') pushdown filters to limit response.
       Results older than 30 days are not available.
     filters:
       - name: check_id
@@ -301,6 +356,10 @@ tables:
       - name: from
         required: false
       - name: to
+        required: false
+      - name: location
+        required: false
+      - name: check_type
         required: false
     request:
       method: GET
@@ -485,6 +544,28 @@ tables:
         expr:
           kind: from_filter
           key: to
+
+      - name: location
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Filter check results by execution location (e.g. 'us-east-1').
+          Applied as a query parameter — not returned in the response.
+        expr:
+          kind: from_filter
+          key: location
+
+      - name: check_type
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Filter check results by check type (e.g. 'API', 'BROWSER').
+          Applied as a query parameter — not returned in the response.
+        expr:
+          kind: from_filter
+          key: check_type
 
   # ────────────────────────────────────────────────────────────────────────
   # checkly.alert_channels — notification channels for check failures

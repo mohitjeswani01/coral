@@ -16,7 +16,7 @@ Checkly requires **two credentials** for every API request:
 - **Personal key**: Checkly dashboard → User Settings → [API Keys](https://app.checklyhq.com/settings/user/api-keys) → Create API key
 - **Service key** (recommended for CI/CD): Checkly dashboard → Account Settings → API Keys → Create API key
 
-A read-only key is sufficient for all tables in this source.
+This source only performs read-only GET requests. Any Checkly API key is sufficient — Checkly does not provide scoped or read-only key variants.
 
 ### Step 2 — Get your Account ID
 
@@ -34,16 +34,16 @@ See the [Checkly authentication docs](https://developers.checklyhq.com/docs/auth
 
 ## Tables
 
-| Table | Description | Required filters |
-|---|---|---|
-| `checkly.checks` | All API and browser checks in the account — inventory, type, frequency, locations | — |
-| `checkly.check_results` | Recent run results for a specific check — pass/fail, response time, run location | `check_id` (required) |
-| `checkly.alert_channels` | Notification channels — Slack, Email, PagerDuty, Webhook, etc. — and their routing config | — |
-| `checkly.dashboards` | Public and private status page dashboards with domain and tag configuration | — |
+| Table | Description | Required filters | Optional pushdown filters |
+|---|---|---|---|
+| `checkly.checks` | All API and browser checks in the account — inventory, type, frequency, locations | — | `tag`, `check_type`, `search`, `status` |
+| `checkly.check_results` | Recent run results for a specific check — pass/fail, response time, run location | `check_id` (required) | `result_type`, `has_failures`, `from`, `to`, `location`, `check_type` |
+| `checkly.alert_channels` | Notification channels — Slack, Email, PagerDuty, Webhook, etc. — and their routing config | — | — |
+| `checkly.dashboards` | Public and private status page dashboards with domain and tag configuration | — | — |
 
 ### `checkly.checks`
 
-Lists all synthetic monitoring checks in the account, newest first. No filter required — the `X-Checkly-Account` header scopes results automatically.
+Lists all synthetic monitoring checks in the account, newest first. No filter is required, but you can filter results upstream using `tag`, `check_type`, `search`, or `status` pushdown filters.
 
 Key columns:
 
@@ -60,6 +60,9 @@ Key columns:
 | `degraded_response_time` | `Int64` | Degraded threshold in ms |
 | `max_response_time` | `Int64` | Failure threshold in ms |
 | `created_at` | `Timestamp` | Check creation time |
+| `tag` | `Utf8` (Virtual) | Filter checks by a specific tag (pushdown) |
+| `search` | `Utf8` (Virtual) | Search checks by name or tag (pushdown) |
+| `status` | `Utf8` (Virtual) | Filter checks by their current status (pushdown) |
 
 ### `checkly.check_results`
 
@@ -72,6 +75,8 @@ Recent run results for one specific check. **`check_id` is required.** Get check
 | `has_failures` | No | `true` to return only failing runs |
 | `from` | No | UNIX timestamp in **seconds** — lower time bound |
 | `to` | No | UNIX timestamp in **seconds** — upper time bound |
+| `location` | No | Filter check results by execution location (e.g. `us-east-1`) |
+| `check_type` | No | Filter check results by check type (e.g. `API` or `BROWSER`) |
 
 Key columns:
 
@@ -86,6 +91,8 @@ Key columns:
 | `started_at` | `Timestamp` | Run start time |
 | `stopped_at` | `Timestamp` | Run completion time |
 | `response_time` | `Int64` | Execution time in ms |
+| `location` | `Utf8` (Virtual) | Filter check results by execution location (pushdown) |
+| `check_type` | `Utf8` (Virtual) | Filter check results by check type (pushdown) |
 
 ### `checkly.alert_channels`
 
@@ -152,6 +159,36 @@ WHERE check_id = '<your-check-id>'
 LIMIT 50;
 ```
 
+### Search checks by tag and type (upstream pushdown)
+
+```sql
+SELECT
+  id,
+  name,
+  check_type,
+  frequency
+FROM checkly.checks
+WHERE tag = 'production'
+  AND check_type = 'BROWSER';
+```
+
+### Filter check results by location and type (upstream pushdown)
+
+```sql
+SELECT
+  id,
+  has_failures,
+  run_location,
+  response_time,
+  started_at
+FROM checkly.check_results
+WHERE check_id = '<your-check-id>'
+  AND location = 'us-east-1'
+  AND check_type = 'API'
+  AND result_type = 'FINAL'
+LIMIT 50;
+```
+
 ### Audit alert channel routing
 
 ```sql
@@ -180,6 +217,20 @@ FROM checkly.dashboards
 WHERE is_private = false;
 ```
 
+## Rate Limits and Limitations
+
+### Rate Limits
+Checkly enforces rate limits to ensure API stability:
+* **General API**: 10 requests per second (RPS) or 600 requests per minute (RPM) per account.
+* **Check Results Endpoint**: Stricter limit of 5 requests per 10 seconds.
+
+If these limits are exceeded, Checkly returns an HTTP `429 Too Many Requests` status code. Coral will propagate this error back to your client. 
+
+### Large-Query Guidance
+To avoid triggering the strict check-results rate limits:
+* Always filter check results by a specific time window using the `from` and `to` filters (Unix timestamps in seconds).
+* Avoid executing queries that scan all check results without time constraints.
+
 ## Auth
 
 This source uses two headers on every request:
@@ -187,7 +238,7 @@ This source uses two headers on every request:
 | Header | Value | Input kind |
 |---|---|---|
 | `Authorization` | `Bearer <CHECKLY_API_KEY>` | `secret` |
-| `X-Checkly-Account` | `<CHECKLY_ACCOUNT_ID>` | `variable` |
+| `X-Checkly-Account` | `<CHECKLY_ACCOUNT_ID>` | `secret` |
 
 Both credentials are required. Requests without the `X-Checkly-Account` header will be rejected by the API regardless of the API key's validity.
 
