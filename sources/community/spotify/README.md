@@ -8,6 +8,10 @@ the Spotify Web API with OAuth 2.0 authorization-code and PKCE.
 
 ### 1. Create a Spotify app
 
+> **Spotify Premium required**: the app owner must hold an active Spotify
+> Premium subscription (including Family or Duo plans) to use the Web API in
+> Development Mode. If the subscription lapses, the app will stop working.
+
 Open the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
 and create an app (or use an existing one).
 
@@ -37,11 +41,16 @@ cargo run -p coral-cli -- source add --file sources/community/spotify/manifest.y
 ```
 
 Coral will open your browser to the Spotify authorization page. After you
-approve the requested scopes, Coral stores the access token automatically and
-handles token refresh.
+approve the requested scopes, Coral stores the access token and refresh token
+automatically. Token refresh is handled transparently — no manual intervention
+is needed.
 
-To paste a token manually instead of using the browser flow, run the source
-add command and choose **Paste access token** when prompted.
+**Manual token path (short-lived)**: To paste a token instead of using the
+browser flow, run the source add command and choose **Paste access token** when
+prompted. `SPOTIFY_CLIENT_ID` is not required for this path. However, Spotify
+access tokens expire after **one hour** and cannot be refreshed without the
+Client ID. The paste path is intended for quick testing only — it will stop
+working after expiry.
 
 ### 4. Verify
 
@@ -111,13 +120,16 @@ ORDER BY added_at DESC
 LIMIT 20;
 ```
 
-Saved tracks by a specific artist:
+Saved tracks by a specific artist (note: `artist_name` is not pushed down
+to Spotify — Coral fetches pages until the result is complete or the fetch
+limit is reached):
 
 ```sql
 SELECT track_name, album_name, added_at, duration_ms
 FROM spotify.saved_tracks
 WHERE artist_name = 'Radiohead'
-ORDER BY added_at DESC;
+ORDER BY added_at DESC
+LIMIT 50;
 ```
 
 Explicit saved tracks sorted by popularity:
@@ -196,9 +208,18 @@ cargo run -p coral-cli -- sql "SELECT table_name, column_name, data_type FROM co
 
 ## Notes
 
+- **Spotify Premium required**: the app owner must hold an active Spotify
+  Premium subscription to use the Web API in Development Mode. This includes
+  Family and Duo plans. If the subscription lapses, API calls will fail.
+- **Token expiry and refresh**: Spotify access tokens expire after one hour.
+  The OAuth browser flow issues a refresh token, which Coral uses automatically.
+  The **Paste access token** path does not issue a refresh token and will stop
+  working after one hour unless `SPOTIFY_CLIENT_ID` is also set — in which
+  case Coral can still refresh. Use the browser flow for long-lived usage.
 - **OAuth PKCE**: Spotify requires PKCE for public clients. No client secret is
   used or stored. The `SPOTIFY_CLIENT_ID` variable holds the app's Client ID,
-  which is not secret.
+  which is not a credential. It can be left blank for the paste-token path,
+  but token refresh will not work without it.
 - **Redirect URI**: Spotify requires the loopback IP literal
   `http://127.0.0.1:53682/oauth/callback`. Add this URI exactly in your
   Spotify app dashboard. `localhost` and `127.0.0.1:0` are not accepted.
@@ -207,14 +228,20 @@ cargo run -p coral-cli -- sql "SELECT table_name, column_name, data_type FROM co
   must be manually added to the **Users and Access** allowlist in the Spotify
   Developer Dashboard. Moving beyond 5 users requires Extended Quota Mode,
   which Spotify currently grants only to registered organizations.
+- **saved_tracks fetch limit**: `saved_tracks` has a default fetch limit of
+  100 tracks. Filters such as `artist_name` are not pushed down to Spotify —
+  Coral fetches pages until the limit is reached or pages are exhausted.
+  Always include a `LIMIT` clause when querying with non-pushdown filters to
+  avoid scanning a large library and hitting Spotify's rolling rate limit.
 - **Offset pagination**: All four tables use offset-based pagination with a
   maximum page size of 50. Spotify caps the total reachable offset at 1000 for
   some endpoints. Users with very large libraries may not be able to page
   beyond the first 1000 items.
 - **Nested fields**: Several columns are sourced from nested API response
-  objects. `tracks_total` in `playlists` comes from `tracks.total`.
-  `followers_total` in `top_artists` comes from `followers.total`. These are
-  not flat fields in the Spotify response.
+  objects. `tracks_total` in `playlists` comes from `tracks.total` on each
+  SimplifiedPlaylistObject — this is the track count for that individual
+  playlist, not the total number of playlists. `followers_total` in
+  `top_artists` comes from `followers.total`. These are not flat fields.
 - **Primary artist**: `artist_name` and `artist_id` in `saved_tracks` and
   `top_tracks` reflect the first element of the API's `artists` array. Use
   the `artists` Json column for the complete artist list.
@@ -224,8 +251,6 @@ cargo run -p coral-cli -- sql "SELECT table_name, column_name, data_type FROM co
 - **description and public nullability**: `description` is null for
   unmodified or unverified playlists. `public` can be null when the status is
   not applicable.
-- **Token refresh**: Coral handles OAuth token refresh automatically using the
-  stored refresh token. No manual intervention is required.
 - **Rate limits**: The Spotify Web API enforces rate limits on a rolling
   30-second window. On a `429 Too Many Requests` response Spotify returns a
   `Retry-After` header. Coral will surface the error; add retries or reduce

@@ -54,12 +54,18 @@ inputs:
 
   SPOTIFY_CLIENT_ID:
     kind: variable
+    default: ""
     hint: |
-      Your Spotify app Client ID (not the client secret). Find it in the
-      Spotify Developer Dashboard at https://developer.spotify.com/dashboard
-      after creating or selecting an app. Make sure
-      http://127.0.0.1:53682/oauth/callback is listed as a redirect URI
-      in that app's settings.
+      Your Spotify app Client ID (not the client secret). Required for
+      the OAuth browser flow. Find it in the Spotify Developer Dashboard
+      at https://developer.spotify.com/dashboard after creating an app.
+      Make sure http://127.0.0.1:53682/oauth/callback is listed as an
+      allowed redirect URI in that app's settings.
+
+      Leave blank only if you are using the "Paste access token" method
+      and are managing token refresh yourself. Spotify access tokens
+      expire after one hour and cannot be refreshed without the Client
+      ID — the paste path is therefore short-lived.
 
 auth:
   type: HeaderAuth
@@ -243,6 +249,7 @@ tables:
       ordered by most recently added. Each row is one saved track with
       full track metadata, primary artist fields, and album fields.
       Paginated up to 50 per page.
+    fetch_limit_default: 100
     guide: |
       Each row corresponds to one item in the Spotify API response. The
       API wraps each track in a SavedTrackObject (added_at + track), so
