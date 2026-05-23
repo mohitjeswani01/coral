@@ -279,8 +279,10 @@ tables:
               - added_at
       - name: track_id
         type: Utf8
-        nullable: false
-        description: Spotify track ID.
+        nullable: true
+        description: >-
+          Spotify track ID. Null for local files in the user's library
+          (is_local = true) — those tracks have no Spotify ID.
         expr:
           kind: path
           path:
