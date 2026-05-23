@@ -14,10 +14,6 @@ inputs:
     hint: |
       Your Google Cloud Console OAuth 2.0 Desktop Application Client ID.
       Ensure the Google Tasks API is enabled in your Google Cloud Project.
-  GOOGLE_CLIENT_SECRET:
-    kind: secret
-    hint: |
-      Your Google Cloud Console OAuth 2.0 Desktop Application Client Secret.
   GOOGLE_TASKS_TOKEN:
     kind: secret
     hint: Secured OAuth access token for Google Tasks API queries.
@@ -27,23 +23,19 @@ inputs:
           oauth:
             flow:
               type: authorization_code
-              pkce: disabled
-            redirect_uri: "http://127.0.0.1:0"
-            redirect_uri_port_mode: random
+              pkce: required
+            redirect_uri: http://127.0.0.1:53682/oauth/callback
             endpoints:
-              authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent"
-              token_url: "https://oauth2.googleapis.com/token"
+              authorization_url: https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent
+              token_url: https://oauth2.googleapis.com/token
             client:
               id:
                 input: GOOGLE_CLIENT_ID
-              secret:
-                input: GOOGLE_CLIENT_SECRET
-                transport: request_body
             scopes:
               scope:
                 delimiter: space
                 values:
-                  - "https://www.googleapis.com/auth/tasks.readonly"
+                  - https://www.googleapis.com/auth/tasks.readonly
 
 auth:
   type: HeaderAuth
@@ -144,14 +136,14 @@ tables:
       Optionally filter by `id` for point queries, or `show_completed`, `show_hidden`, `due_min`, etc.
     guide: |
       Requires `tasklist_id` — obtain it from `google_tasks.task_lists`.
-      
+
       **Point Queries:** Filtering by `id` will route directly to the single task endpoint.
-      
+
       **Hidden Tasks:** By default, Google Tasks API does not return hidden
       tasks or tasks completed in first-party clients (like the web UI or mobile app).
       To see these tasks, you MUST include the filters `show_completed = true` AND
       `show_hidden = true`.
-      
+
       **Dates:** Filters like `due_min`, `due_max`, `completed_min`, and `completed_max`
       accept RFC 3339 formatted timestamps (e.g., `2023-10-01T00:00:00Z`).
     filters:

@@ -60,7 +60,8 @@ SELECT
     t.completed
 FROM google_tasks.tasks t
 JOIN google_tasks.task_lists l ON t.tasklist_id = l.id
-WHERE t.status = 'completed';
+WHERE t.tasklist_id = 'your_list_id_here'
+  AND t.status = 'completed';
 ```
 
 ### 4. Fetch hidden and completed tasks from the API layer
