@@ -24,7 +24,7 @@ for details on token management.
 
 | Table | Description | Filters |
 |---|---|---|
-| `replicate.predictions` | Your AI inference history — every model run under the authenticated account | `created_after`, `created_before`, `source` (optional) |
+| `replicate.predictions` | Your AI inference history — every model run under the authenticated account | `created_after`, `created_before` (optional) |
 | `replicate.models` | Global public ML model catalog — browse and discover models by owner, latest updates, or creation date | `sort_by`, `sort_direction` (optional) |
 | `replicate.deployments` | Deployed models configured for the authenticated account, with hardware and scaling config | — |
 | `replicate.collections` | Curated model groups maintained by Replicate (e.g. "super-resolution", "text-to-image") | — |
@@ -33,7 +33,7 @@ for details on token management.
 ### `replicate.predictions`
 
 Returns predictions made by the authenticated user, newest first.
-Results are limited to the first page (up to 100 predictions) because Replicate's full-URL pagination is not supported. To filter predictions upstream, use `created_after`, `created_before`, or `source` filters.
+Results are limited to the first page (up to 100 predictions) because Replicate's full-URL pagination is not supported. To filter predictions upstream, use `created_after` or `created_before` filters.
 
 Key columns:
 
@@ -46,7 +46,7 @@ Key columns:
 | `created_at` | `Timestamp` | When the prediction was created |
 | `started_at` | `Timestamp` | When the model began processing |
 | `completed_at` | `Timestamp` | When the prediction finished |
-| `source` | `Utf8` | How the prediction was created — `"api"` or `"web"` |
+| `source` | `Utf8` | How the prediction was created — `"api"` or `"web"` (Note: not supported as an upstream pushdown filter) |
 | `input` | `Json` | Model-specific input parameters |
 | `output` | `Json` | Model-specific output (URL, string, or object) |
 | `error` | `Utf8` | Error message when `status = 'failed'` |
@@ -120,7 +120,7 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
-### Filter predictions by creation source and date range (upstream pushdown)
+### Filter predictions by date range (upstream pushdown)
 
 ```sql
 SELECT
@@ -129,8 +129,7 @@ SELECT
   status,
   created_at
 FROM replicate.predictions
-WHERE source = 'api'
-  AND created_after = '2026-05-01T00:00:00Z'
+WHERE created_after = '2026-05-01T00:00:00Z'
   AND created_before = '2026-05-20T23:59:59Z'
 ORDER BY created_at DESC;
 ```
@@ -175,6 +174,18 @@ SELECT
   sku
 FROM replicate.hardware;
 ```
+
+## Rate Limits and Limitations
+
+### Rate Limits
+Replicate enforces rate limits based on your account type and the action being performed:
+* **Prediction Creation**: 600 requests per minute (RPM).
+* **Other Endpoints**: 3,000 requests per minute (RPM).
+
+If these limits are exceeded, Replicate returns an HTTP `429 Too Many Requests` status code. Coral will propagate this error status back to your client. For details, refer to the [Replicate rate limit documentation](https://replicate.com/docs/topics/predictions/rate-limits).
+
+### Known Limitations
+* **Pagination**: The `replicate.predictions`, `replicate.models`, `replicate.deployments`, and `replicate.collections` tables only retrieve the first page of results (up to 100 records) due to Coral not yet supporting Replicate's full-URL based pagination. Use pushdown filters (such as `created_after` or `created_before` on `replicate.predictions`) to retrieve relevant data.
 
 ## Auth
 
