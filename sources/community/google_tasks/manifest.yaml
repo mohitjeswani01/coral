@@ -5,7 +5,7 @@ backend: http
 description: >-
   Query task lists and tasks from the Google Tasks API. Supports fetching
   all your personal and shared task lists, and allows deep filtering of tasks
-  by due dates, completion status, and visibility.
+  by due dates, completion status, assignment, and visibility.
 base_url: "https://tasks.googleapis.com"
 
 inputs:
@@ -14,28 +14,43 @@ inputs:
     hint: |
       Your Google Cloud Console OAuth 2.0 Desktop Application Client ID.
       Ensure the Google Tasks API is enabled in your Google Cloud Project.
+  GOOGLE_CLIENT_SECRET:
+    kind: secret
+    hint: |
+      Your Google Cloud Console OAuth 2.0 Desktop Application Client Secret.
   GOOGLE_TASKS_TOKEN:
     kind: secret
-    hint: Secured OAuth access token for Google Tasks API queries.
+    hint: |
+      Google Tasks OAuth access token. Use "Connect with Google" to authenticate
+      interactively via the OAuth authorization-code flow. Required scope:
+      https://www.googleapis.com/auth/tasks.readonly
     credential:
       methods:
         - type: oauth
+          label: Connect with Google
+          description: Authenticate via Google OAuth authorization-code flow.
           oauth:
             flow:
               type: authorization_code
-              pkce: required
+              pkce: disabled
             redirect_uri: http://127.0.0.1:53682/oauth/callback
+            redirect_uri_port_mode: fixed
             endpoints:
-              authorization_url: https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent
+              authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent"
               token_url: https://oauth2.googleapis.com/token
             client:
               id:
                 input: GOOGLE_CLIENT_ID
+              secret:
+                input: GOOGLE_CLIENT_SECRET
+                transport: basic_auth
             scopes:
               scope:
                 delimiter: space
                 values:
                   - https://www.googleapis.com/auth/tasks.readonly
+        - type: source_config
+          label: Paste token
 
 auth:
   type: HeaderAuth
@@ -56,7 +71,8 @@ test_queries:
 tables:
   # ------------------------------------------------------------------
   # google_tasks.task_lists — all task lists accessible to the user
-  # GET /tasks/v1/users/@me/lists
+  # GET /tasks/v1/users/@me/lists        (list all)
+  # GET /tasks/v1/users/@me/lists/{id}   (single object — row_strategy: direct)
   # ------------------------------------------------------------------
   - name: task_lists
     description: >-
@@ -65,7 +81,8 @@ tables:
     guide: |
       Entry-point table. Returns all task lists visible to the authenticated user.
       Obtain the `id` from here to query specific items in the `tasks` table.
-      Point queries by `id` are supported and will route to the single task list endpoint.
+      Filtering by `id` routes directly to the single task list endpoint.
+    fetch_limit_default: 100
     filters:
       - name: id
         required: false
@@ -80,6 +97,7 @@ tables:
     response:
       rows_path:
         - items
+      row_strategy: direct
     pagination:
       mode: cursor_query
       page_size:
@@ -125,27 +143,37 @@ tables:
 
   # ------------------------------------------------------------------
   # google_tasks.tasks — task items inside a list
-  # GET /tasks/v1/lists/{tasklist}/tasks
+  # GET /tasks/v1/lists/{tasklist}/tasks              (list all)
+  # GET /tasks/v1/lists/{tasklist}/tasks/{id}         (single object — row_strategy: direct)
   # Required filter: tasklist_id (PATH param).
-  # Optional filters: show_completed, show_hidden, due_min, etc (QUERY params).
+  # Optional filters: show_completed, show_hidden, show_assigned, due_min, etc (QUERY params).
+  # Note: showAssigned=true is required to include tasks assigned from Docs/Chat.
   # ------------------------------------------------------------------
   - name: tasks
     description: >-
       Individual task items contained within a designated task list.
       Requires `tasklist_id` (from `google_tasks.task_lists.id`).
-      Optionally filter by `id` for point queries, or `show_completed`, `show_hidden`, `due_min`, etc.
+      Optionally filter by `id` for single-task lookups, or by
+      `show_completed`, `show_hidden`, `show_assigned`, `due_min`, etc.
     guide: |
       Requires `tasklist_id` — obtain it from `google_tasks.task_lists`.
 
-      **Point Queries:** Filtering by `id` will route directly to the single task endpoint.
+      **Point Queries:** Filtering by both `tasklist_id` and `id` routes directly
+      to the single task endpoint and returns one row.
 
       **Hidden Tasks:** By default, Google Tasks API does not return hidden
       tasks or tasks completed in first-party clients (like the web UI or mobile app).
-      To see these tasks, you MUST include the filters `show_completed = true` AND
-      `show_hidden = true`.
+      To see these tasks, include `show_completed = true` AND `show_hidden = true`.
+
+      **Assigned Tasks:** Tasks assigned from Google Docs or Google Chat are not
+      returned by default. Pass `show_assigned = true` to include them.
 
       **Dates:** Filters like `due_min`, `due_max`, `completed_min`, and `completed_max`
       accept RFC 3339 formatted timestamps (e.g., `2023-10-01T00:00:00Z`).
+
+      **Rate limits:** Google Tasks enforces a courtesy rate limit of 50,000 queries
+      per day. Avoid unbounded scans on large lists; use `LIMIT` and date-range filters.
+    fetch_limit_default: 100
     filters:
       - name: tasklist_id
         required: true
@@ -156,6 +184,8 @@ tables:
       - name: show_deleted
         required: false
       - name: show_hidden
+        required: false
+      - name: show_assigned
         required: false
       - name: due_min
         required: false
@@ -180,6 +210,9 @@ tables:
         - name: showHidden
           from: filter
           key: show_hidden
+        - name: showAssigned
+          from: filter
+          key: show_assigned
         - name: dueMin
           from: filter
           key: due_min
@@ -204,6 +237,7 @@ tables:
     response:
       rows_path:
         - items
+      row_strategy: direct
     pagination:
       mode: cursor_query
       page_size:
@@ -317,6 +351,16 @@ tables:
           kind: path
           path:
             - selfLink
+      - name: web_view_link
+        type: Utf8
+        nullable: true
+        description: >-
+          Absolute link to the task in the Google Tasks web UI. Present on
+          tasks assigned from Google Docs or Chat.
+        expr:
+          kind: path
+          path:
+            - webViewLink
       - name: links
         type: Json
         nullable: true
