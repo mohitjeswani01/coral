@@ -30,6 +30,10 @@ auth:
     - name: Authorization
       from: template
       template: Token {{input.SEMAPHORE_API_TOKEN}}
+request_headers:
+  - name: User-Agent
+    from: literal
+    value: SemaphoreCI v2.0 Client
 
 test_queries:
   - >-
@@ -226,13 +230,14 @@ tables:
   - name: pipelines
     description: >-
       Pipelines for a Semaphore CI project. Each row is one pipeline
-      execution within a workflow. Pass `project_id` or `wf_id` (or both)
-      — the API requires at least one. Note: the list endpoint does not
-      return `ppl_id`; use `initial_ppl_id` from `semaphore_ci.workflows`
-      to obtain the initial pipeline ID for promotions.
+      execution within a workflow. Requires `project_id`; optionally pass
+      `wf_id` to narrow to a single workflow. Note: the list endpoint
+      does not return `ppl_id`; use `initial_ppl_id` from
+      `semaphore_ci.workflows` to obtain the initial pipeline ID for
+      promotions.
     guide: |
-      Pass at least one of `project_id` or `wf_id`. The Semaphore API
-      requires one to be present; providing both narrows results further.
+      Requires `project_id`. Optionally add `wf_id` to narrow to a
+      specific workflow's pipelines.
       The list endpoint does NOT return `ppl_id` — to get a pipeline ID
       for the promotions table, use `initial_ppl_id` from
       `semaphore_ci.workflows` (which gives the first pipeline for each
@@ -243,7 +248,7 @@ tables:
       `done_before` accept Unix timestamps for server-side pushdown.
     filters:
       - name: project_id
-        required: false
+        required: true
       - name: wf_id
         required: false
       - name: branch_name
@@ -292,8 +297,8 @@ tables:
     columns:
       - name: project_id
         type: Utf8
-        nullable: true
-        description: Project ID (echoes filter when provided).
+        nullable: false
+        description: Project ID (required filter).
         expr:
           kind: from_filter
           key: project_id

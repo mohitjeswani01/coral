@@ -40,6 +40,8 @@ coral source add --file sources/community/semaphore_ci/manifest.yaml
 | `SEMAPHORE_ORG_SLUG` | Variable | Organization slug (subdomain) |
 
 Auth uses `Authorization: Token <TOKEN>` per the Semaphore v1alpha API spec.
+The documented `User-Agent: SemaphoreCI v2.0 Client` header is sent
+automatically via `request_headers`.
 
 ## Tables
 
@@ -78,8 +80,8 @@ tag, pull request, or manual rerun.
 ### pipelines
 
 Pipelines for a project or workflow. Each row is one pipeline execution
-within a workflow. Pass `project_id` or `wf_id` (or both) — the API
-requires at least one.
+within a workflow. Requires `project_id`; optionally pass `wf_id` to
+narrow to a single workflow.
 
 > **Important:** The pipeline list endpoint does **not** return `ppl_id`.
 > To get a pipeline ID for the promotions table, use `initial_ppl_id`
@@ -87,7 +89,7 @@ requires at least one.
 
 | Column | Type | Description |
 |---|---|---|
-| `project_id` | Utf8 | Project ID (echoed when provided) |
+| `project_id` | Utf8 | Project ID (required filter) |
 | `name` | Utf8 | Pipeline name from YAML config |
 | `yaml_file_name` | Utf8 | YAML file defining this pipeline |
 | `working_directory` | Utf8 | Pipeline working directory |
@@ -97,9 +99,9 @@ requires at least one.
 | `branch_name` | Utf8 | Git branch name |
 | `created_at` | Timestamp | Pipeline creation time (UTC) |
 
-**Required filter:** at least one of `project_id` or `wf_id`
-**Optional filters:** `branch_name`, `yml_file_path`, `created_after`,
-`created_before`, `done_after`, `done_before`
+**Required filter:** `project_id`
+**Optional filters:** `wf_id`, `branch_name`, `yml_file_path`,
+`created_after`, `created_before`, `done_after`, `done_before`
 **Pagination:** Link header
 
 > **Note:** Richer fields like `result_reason`, `error_description`,
@@ -159,7 +161,8 @@ WHERE project_id = 'your-project-uuid'
 -- Filter pipelines by workflow ID
 SELECT name, state, result, yaml_file_name
 FROM semaphore_ci.pipelines
-WHERE wf_id = 'your-workflow-uuid';
+WHERE project_id = 'your-project-uuid'
+  AND wf_id = 'your-workflow-uuid';
 
 -- Find pipelines by branch name
 SELECT name, state, result, created_at
@@ -201,7 +204,6 @@ WHERE pipeline_id = 'initial-ppl-id-from-workflows';
 - **Case inconsistency**: The `state` and `result` fields may use different
   casing between API responses (e.g. `DONE` vs `done`, `FAILED` vs
   `failed`). Use `LOWER(result)` or `UPPER(state)` for reliable filtering.
-- **Pipelines require at least one filter**: The Semaphore API requires
-  either `project_id` or `wf_id` (or both) on the pipelines endpoint.
-  Queries without either will fail at the API level.
+- **Pipelines require `project_id`**: The pipelines table requires
+  `project_id`. Optionally add `wf_id` to narrow to a specific workflow.
 - **API docs**: https://docs.semaphoreci.com/reference/api
