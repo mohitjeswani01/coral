@@ -24,7 +24,7 @@ for details on token management.
 
 | Table | Description | Filters |
 |---|---|---|
-| `replicate.predictions` | Your AI inference history — every model run under the authenticated account | `created_after`, `created_before`, `source` (optional) |
+| `replicate.predictions` | Your AI inference history — every model run under the authenticated account | `created_after`, `created_before` (optional, upstream pushdown) |
 | `replicate.models` | Global public ML model catalog — browse and discover models by owner, latest updates, or creation date | `sort_by`, `sort_direction` (optional) |
 | `replicate.deployments` | Deployed models configured for the authenticated account, with hardware and scaling config | — |
 | `replicate.collections` | Curated model groups maintained by Replicate (e.g. "super-resolution", "text-to-image") | — |
@@ -33,7 +33,7 @@ for details on token management.
 ### `replicate.predictions`
 
 Returns predictions made by the authenticated user, newest first.
-Results are limited to the first page (up to 100 predictions) because Replicate's full-URL pagination is not supported. To filter predictions upstream, use `created_after`, `created_before`, or `source` filters.
+Results are limited to the first page (up to 100 predictions) because Replicate's full-URL pagination is not supported. To filter predictions upstream, use `created_after` or `created_before` filters.
 
 Key columns:
 
@@ -46,14 +46,14 @@ Key columns:
 | `created_at` | `Timestamp` | When the prediction was created |
 | `started_at` | `Timestamp` | When the model began processing |
 | `completed_at` | `Timestamp` | When the prediction finished |
-| `source` | `Utf8` | How the prediction was created — `"api"` or `"web"`. (Note: Replicate's API only supports upstream pushdown for `source = 'web'`. Other values are filtered locally). |
+| `source` | `Utf8` | How the prediction was created — `"api"` or `"web"`. Response column only; filter locally with `WHERE source = 'api'`. |
 | `input` | `Json` | Model-specific input parameters |
 | `output` | `Json` | Model-specific output (URL, string, or object) |
 | `error` | `Utf8` | Error message when `status = 'failed'` |
 | `metrics__total_time` | `Float64` | Total wall-clock duration in seconds |
 | `data_removed` | `Boolean` | True when output data has been deleted by retention policy |
-| `created_after` | `Utf8` (Virtual) | Filter predictions created after this ISO 8601 timestamp (pushdown) |
-| `created_before` | `Utf8` (Virtual) | Filter predictions created before this ISO 8601 timestamp (pushdown) |
+| `created_after` | `Utf8` (Virtual) | Filter predictions created after this ISO 8601 timestamp — pushed upstream |
+| `created_before` | `Utf8` (Virtual) | Filter predictions created before this ISO 8601 timestamp — pushed upstream |
 
 ### `replicate.models`
 
@@ -120,7 +120,7 @@ ORDER BY created_at DESC
 LIMIT 50;
 ```
 
-### Filter predictions by source and date range (upstream pushdown)
+### Filter predictions by date range (upstream pushdown)
 
 ```sql
 SELECT
@@ -129,9 +129,22 @@ SELECT
   status,
   created_at
 FROM replicate.predictions
-WHERE source = 'web'
-  AND created_after = '2026-05-01T00:00:00Z'
+WHERE created_after = '2026-05-01T00:00:00Z'
   AND created_before = '2026-05-20T23:59:59Z'
+ORDER BY created_at DESC;
+```
+
+### Filter predictions by source (local filtering)
+
+```sql
+SELECT
+  id,
+  model,
+  status,
+  source,
+  created_at
+FROM replicate.predictions
+WHERE source = 'api'
 ORDER BY created_at DESC;
 ```
 
