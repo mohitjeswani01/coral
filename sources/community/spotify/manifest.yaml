@@ -92,10 +92,11 @@ tables:
     guide: |
       Each row is one simplified playlist object. `id` is the Spotify
       playlist ID. `tracks_total` is the number of tracks in the playlist
-      — it is a nested field (tracks.total in the API response).
-      `owner_id` and `owner_name` identify the playlist creator.
-      `public` can be true, false, or null. `description` is null for
-      unmodified or unverified playlists.
+      — it is a nested field (items.total in the API response, where
+      `items` is the PlaylistTracksRefObject on each SimplifiedPlaylistObject,
+      not the outer paging array). `owner_id` and `owner_name` identify the
+      playlist creator. `public` can be true, false, or null.
+      `description` is null for unmodified or unverified playlists.
       Use `id` to fetch full track details via the Spotify API.
     request:
       method: GET
@@ -171,11 +172,14 @@ tables:
         nullable: true
         description: >-
           Number of tracks in the playlist. Sourced from the nested
-          tracks.total field in the Spotify API response.
+          items.total field in the Spotify API response (the
+          PlaylistTracksRefObject on each SimplifiedPlaylistObject).
+          The `tracks` field serving the same data is deprecated in
+          the Spotify OpenAPI schema as of February 2026.
         expr:
           kind: path
           path:
-            - tracks
+            - items
             - total
       - name: owner_id
         type: Utf8

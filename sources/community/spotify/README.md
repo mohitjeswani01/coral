@@ -235,13 +235,16 @@ cargo run -p coral-cli -- sql "SELECT table_name, column_name, data_type FROM co
   Always include a `LIMIT` clause when querying with non-pushdown filters to
   avoid scanning a large library and hitting Spotify's rolling rate limit.
 - **Offset pagination**: All four tables use offset-based pagination with a
-  maximum page size of 50. Spotify caps the total reachable offset at 1000 for
-  some endpoints. Users with very large libraries may not be able to page
-  beyond the first 1000 items.
+  maximum page size of 50. The `playlists` table supports a maximum offset
+  of 100,000 (per the Spotify API spec). The `saved_tracks` and `top_artists`
+  / `top_tracks` tables do not document a hard offset cap in the current API
+  reference for the access levels this source uses.
 - **Nested fields**: Several columns are sourced from nested API response
-  objects. `tracks_total` in `playlists` comes from `tracks.total` on each
-  SimplifiedPlaylistObject — this is the track count for that individual
-  playlist, not the total number of playlists. `followers_total` in
+  objects. `tracks_total` in `playlists` comes from `items.total` on each
+  `SimplifiedPlaylistObject` — this is the `PlaylistTracksRefObject` that
+  holds a link and the track count for that playlist. The `tracks` field
+  carrying the same data is marked deprecated in the Spotify OpenAPI schema
+  (February 2026) with "Use `items` instead". `followers_total` in
   `top_artists` comes from `followers.total`. These are not flat fields.
 - **Primary artist**: `artist_name` and `artist_id` in `saved_tracks` and
   `top_tracks` reflect the first element of the API's `artists` array. Use
