@@ -17,7 +17,7 @@ Personal Access Tokens (PAT) for scripts and CI pipelines.
 1. Go to [https://app.asana.com/0/my-apps](https://app.asana.com/0/my-apps) and create a new app.
 2. Under **Redirect URIs**, add exactly: `http://127.0.0.1:53682/oauth/callback`
 3. Copy the **Client ID** into `ASANA_CLIENT_ID` and the **Client Secret** into `ASANA_CLIENT_SECRET`.
-4. Run `coral source add` and click **Sign in with Asana** to complete the browser-based flow.
+4. Run `coral source add --file sources/community/asana/manifest.yaml` and click **Sign in with Asana** to complete the browser-based flow.
 
 > **Scope:** The `default` scope grants read access to all workspaces, projects, tasks, and
 > sections visible to the authorized user.
@@ -26,7 +26,7 @@ Personal Access Tokens (PAT) for scripts and CI pipelines.
 
 1. Go to [https://app.asana.com/0/my-apps](https://app.asana.com/0/my-apps) → **Create new token**.
 2. Give the token a name and copy it.
-3. Run `coral source add` and paste the token when prompted for `ASANA_TOKEN`.
+3. Run `coral source add --file sources/community/asana/manifest.yaml` and paste the token when prompted for `ASANA_TOKEN`.
 
 ```bash
 coral source add --file sources/community/asana/manifest.yaml
