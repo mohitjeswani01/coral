@@ -230,14 +230,18 @@ tables:
   - name: pipelines
     description: >-
       Pipelines for a Semaphore CI project. Each row is one pipeline
-      execution within a workflow. Requires `project_id`; optionally pass
+      execution within a workflow. This Coral source requires `project_id`
+      for a safe default query path; Semaphore's API also accepts `wf_id`
+      alone, but this source always requires `project_id`. Optionally pass
       `wf_id` to narrow to a single workflow. Note: the list endpoint
       does not return `ppl_id`; use `initial_ppl_id` from
       `semaphore_ci.workflows` to obtain the initial pipeline ID for
       promotions.
     guide: |
-      Requires `project_id`. Optionally add `wf_id` to narrow to a
-      specific workflow's pipelines.
+      This source requires `project_id` as a Coral-side restriction for a
+      safe first-query experience. Semaphore's API contract accepts either
+      `project_id` or `wf_id` (or both); this source always requires
+      `project_id` and treats `wf_id` as an optional narrowing filter.
       The list endpoint does NOT return `ppl_id` — to get a pipeline ID
       for the promotions table, use `initial_ppl_id` from
       `semaphore_ci.workflows` (which gives the first pipeline for each
@@ -393,6 +397,10 @@ tables:
       triggered the promotion (e.g. "Pipeline Done request"). The API
       response only includes name, status, and triggered_by; timestamp
       and auto-promotion metadata are not exposed by this endpoint.
+      Known limitation: Semaphore returns a server error (500) for
+      pipelines that have no promotions configured. An empty result
+      set is the expected outcome for pipelines without promotions,
+      but the upstream API does not return one.
     filters:
       - name: pipeline_id
         required: true

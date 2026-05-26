@@ -80,7 +80,9 @@ tag, pull request, or manual rerun.
 ### pipelines
 
 Pipelines for a project or workflow. Each row is one pipeline execution
-within a workflow. Requires `project_id`; optionally pass `wf_id` to
+within a workflow. This Coral source requires `project_id` for a safe
+default query path; Semaphore's API also accepts `wf_id` alone, but
+this source always requires `project_id`. Optionally pass `wf_id` to
 narrow to a single workflow.
 
 > **Important:** The pipeline list endpoint does **not** return `ppl_id`.
@@ -99,7 +101,8 @@ narrow to a single workflow.
 | `branch_name` | Utf8 | Git branch name |
 | `created_at` | Timestamp | Pipeline creation time (UTC) |
 
-**Required filter:** `project_id`
+**Required filter:** `project_id` (Coral source restriction — Semaphore's
+API also accepts `wf_id` alone)
 **Optional filters:** `wf_id`, `branch_name`, `yml_file_path`,
 `created_after`, `created_before`, `done_after`, `done_before`
 **Pagination:** Link header
@@ -129,7 +132,8 @@ Promotions triggered from a pipeline (e.g. deploy to staging/production).
 
 > **Note:** The promotions list endpoint only returns `name`, `status`,
 > and `triggered_by`. Timestamp and auto-promotion metadata are not
-> exposed by this endpoint.
+> exposed by this endpoint. Semaphore returns a server error (500) for
+> pipelines with no promotions configured rather than an empty array.
 
 ---
 
@@ -204,6 +208,11 @@ WHERE pipeline_id = 'initial-ppl-id-from-workflows';
 - **Case inconsistency**: The `state` and `result` fields may use different
   casing between API responses (e.g. `DONE` vs `done`, `FAILED` vs
   `failed`). Use `LOWER(result)` or `UPPER(state)` for reliable filtering.
-- **Pipelines require `project_id`**: The pipelines table requires
-  `project_id`. Optionally add `wf_id` to narrow to a specific workflow.
+- **Pipelines require `project_id`**: This is a Coral source restriction
+  for a safe first-query experience. Semaphore's API contract accepts
+  either `project_id` or `wf_id` (or both); this source always requires
+  `project_id` and treats `wf_id` as an optional narrowing filter.
+- **Promotions 500 on no-promotion pipelines**: Semaphore returns a
+  server error (500) for pipelines that have no promotions configured.
+  This is an upstream API behavior, not a source bug.
 - **API docs**: https://docs.semaphoreci.com/reference/api
