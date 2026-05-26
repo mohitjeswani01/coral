@@ -51,7 +51,7 @@ Key columns:
 |---|---|---|
 | `id` | `Utf8` | Check UUID — use this as `check_id` in `check_results` |
 | `name` | `Utf8` | Check display name |
-| `check_type` | `Utf8` | `API` · `BROWSER` · `HEARTBEAT` · `DNS` · `TCP` |
+| `check_type` | `Utf8` | `API` · `BROWSER` · `HEARTBEAT` · `DNS` · `TCP` · `MULTI_STEP` · `PLAYWRIGHT` · `AGENTIC` · `ICMP` · `URL` |
 | `frequency` | `Int64` | Run interval in minutes |
 | `activated` | `Boolean` | `false` = check is paused |
 | `muted` | `Boolean` | `true` = alerts suppressed |
@@ -73,8 +73,8 @@ Recent run results for one specific check. **`check_id` is required.** Get check
 | `check_id` | ✅ Yes | UUID of the check to fetch results for |
 | `result_type` | No | `FINAL` (completed runs) or `ATTEMPT` (retry attempts) |
 | `has_failures` | No | `true` to return only failing runs |
-| `from` | No | UNIX timestamp in **seconds** — lower time bound |
-| `to` | No | UNIX timestamp in **seconds** — upper time bound |
+| `from` | No | UNIX timestamp in **seconds** — lower time bound. Use quoted SQL: `WHERE "from" = '1716768000'` |
+| `to` | No | UNIX timestamp in **seconds** — upper time bound. Use quoted SQL: `WHERE "to" = '1716854400'` |
 | `location` | No | Filter check results by execution location (e.g. `us-east-1`) |
 | `check_type` | No | Filter check results by check type (e.g. `API` or `BROWSER`) |
 
@@ -91,8 +91,10 @@ Key columns:
 | `started_at` | `Timestamp` | Run start time |
 | `stopped_at` | `Timestamp` | Run completion time |
 | `response_time` | `Int64` | Execution time in ms |
-| `location` | `Utf8` (Virtual) | Filter check results by execution location (pushdown) |
-| `check_type` | `Utf8` (Virtual) | Filter check results by check type (pushdown) |
+| `location` | `Utf8` (Virtual) | Filter check results by execution location — pushed upstream as `location` query param |
+| `check_type` | `Utf8` (Virtual) | Filter check results by check type — pushed upstream as `checkType` query param |
+| `from` | `Utf8` (Virtual) | Lower time bound (UNIX seconds) — pushed upstream. Use quoted SQL: `WHERE "from" = '...'` |
+| `to` | `Utf8` (Virtual) | Upper time bound (UNIX seconds) — pushed upstream. Use quoted SQL: `WHERE "to" = '...'` |
 
 ### `checkly.alert_channels`
 
@@ -242,4 +244,13 @@ This source uses two headers on every request:
 
 Both credentials are required. Requests without the `X-Checkly-Account` header will be rejected by the API regardless of the API key's validity.
 
-See the [Checkly API reference](https://developers.checklyhq.com/reference) for full documentation.
+See the [Checkly API overview and authentication](https://www.checklyhq.com/docs/api-reference/overview/) for full documentation.
+
+### Per-endpoint API references
+
+| Table | Endpoint reference |
+|---|---|
+| `checkly.checks` | [List all checks](https://www.checklyhq.com/docs/api-reference/checks/list-all-checks/) |
+| `checkly.check_results` | [List all check results](https://www.checklyhq.com/docs/api-reference/check-results/lists-all-check-results-1/) |
+| `checkly.alert_channels` | [List all alert channels](https://www.checklyhq.com/docs/api-reference/alert-channels/list-all-alert-channels/) |
+| `checkly.dashboards` | [List all dashboards](https://www.checklyhq.com/docs/api-reference/dashboards/list-all-dashboards/) |

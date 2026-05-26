@@ -59,7 +59,7 @@ tables:
       checkly.check_results for recent run outcomes.
     guide: |
       Start with `SELECT id, name, check_type, frequency, activated FROM checkly.checks`.
-      `check_type` is one of: API, BROWSER, HEARTBEAT, DNS, TCP.
+      `check_type` is one of: API, BROWSER, HEARTBEAT, DNS, TCP, MULTI_STEP, PLAYWRIGHT, AGENTIC, ICMP, URL.
       `frequency` is the run interval in minutes (e.g. 1, 5, 10, 30, 60).
       `activated = false` means the check is paused and not running.
       `muted = true` means alerts are suppressed even when the check fails.
@@ -127,7 +127,8 @@ tables:
         type: Utf8
         nullable: false
         description: >-
-          Type of synthetic check: API, BROWSER, HEARTBEAT, DNS, or TCP.
+          Type of synthetic check. Current values: API, BROWSER, HEARTBEAT,
+          DNS, TCP, MULTI_STEP, PLAYWRIGHT, AGENTIC, ICMP, URL.
         expr:
           kind: path
           path:
@@ -377,6 +378,12 @@ tables:
         - name: to
           from: filter
           key: to
+        - name: location
+          from: filter
+          key: location
+        - name: checkType
+          from: filter
+          key: check_type
     response:
       rows_path: [entries]
       row_strategy: direct
@@ -523,24 +530,26 @@ tables:
           kind: from_filter
           key: has_failures
 
-      - name: from_filter
+      - name: from
         type: Utf8
         nullable: true
         virtual: true
         description: >-
-          Echoes the from filter applied to this query (UNIX timestamp in seconds).
-          Lower bound for the time window — applied server-side.
+          Lower time bound for check results (UNIX timestamp in seconds).
+          Applied server-side as the `from` query parameter.
+          Use quoted syntax in SQL: WHERE "from" = '1716768000'.
         expr:
           kind: from_filter
           key: from
 
-      - name: to_filter
+      - name: to
         type: Utf8
         nullable: true
         virtual: true
         description: >-
-          Echoes the to filter applied to this query (UNIX timestamp in seconds).
-          Upper bound for the time window — applied server-side.
+          Upper time bound for check results (UNIX timestamp in seconds).
+          Applied server-side as the `to` query parameter.
+          Use quoted syntax in SQL: WHERE "to" = '1716854400'.
         expr:
           kind: from_filter
           key: to
@@ -551,7 +560,7 @@ tables:
         virtual: true
         description: >-
           Filter check results by execution location (e.g. 'us-east-1').
-          Applied as a query parameter — not returned in the response.
+          Pushed upstream as the `location` query parameter.
         expr:
           kind: from_filter
           key: location
@@ -562,7 +571,7 @@ tables:
         virtual: true
         description: >-
           Filter check results by check type (e.g. 'API', 'BROWSER').
-          Applied as a query parameter — not returned in the response.
+          Pushed upstream as the `checkType` query parameter.
         expr:
           kind: from_filter
           key: check_type
