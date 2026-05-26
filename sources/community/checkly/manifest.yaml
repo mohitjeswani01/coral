@@ -592,13 +592,11 @@ tables:
       and verify that critical checks route to the right channels.
     guide: |
       Start with `SELECT id, type, send_failure, send_recovery FROM checkly.alert_channels`.
-      `type` is one of: EMAIL, SLACK, WEBHOOK, SMS, PAGERDUTY, OPSGENIE, CALL.
+      `type` is one of: EMAIL, SLACK, SLACK_APP, WEBHOOK, SMS, PAGERDUTY, OPSGENIE, CALL.
       `send_failure = true` means this channel is notified when a check fails.
       `send_recovery = true` means this channel is notified when a check recovers.
       `send_degraded = true` means this channel is notified when response time
       exceeds the degraded threshold (but the check has not fully failed).
-      `config` is a JSON object — its shape varies per `type`. Use SQL JSON
-      functions to extract fields (e.g. json_get(config, 'channel') for Slack).
       `id` is an integer (not a UUID) — a signed 64-bit integer.
     request:
       method: GET
@@ -630,26 +628,12 @@ tables:
         type: Utf8
         nullable: false
         description: >-
-          Alert channel type: EMAIL, SLACK, WEBHOOK, SMS, PAGERDUTY,
-          OPSGENIE, or CALL.
+          Alert channel type: EMAIL, SLACK, SLACK_APP, WEBHOOK, SMS,
+          PAGERDUTY, OPSGENIE, or CALL.
         expr:
           kind: path
           path:
             - type
-
-      - name: config
-        type: Json
-        nullable: true
-        description: >-
-          Channel-specific configuration as a JSON object. Shape varies
-          by type: EMAIL has address; SLACK has channel and url;
-          WEBHOOK has method, url, and headers; PAGERDUTY has service_key;
-          OPSGENIE has api_key, name, priority, and region.
-          Use SQL JSON functions to extract specific fields.
-        expr:
-          kind: path
-          path:
-            - config
 
       - name: send_recovery
         type: Boolean

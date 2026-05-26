@@ -98,17 +98,17 @@ Key columns:
 
 ### `checkly.alert_channels`
 
-All notification channels in the account. `config` is a polymorphic JSON object — its shape depends on `type`.
+All notification channels in the account. Each row has a `type` and the
+corresponding notification routing flags (`send_failure`, `send_recovery`,
+`send_degraded`, `ssl_expiry`).
 
-| `type` | `config` fields |
-|---|---|
-| `EMAIL` | `address` |
-| `SLACK` | `channel`, `url` |
-| `WEBHOOK` | `method`, `url`, `headers`, `template` |
-| `SMS` | `number` |
-| `PAGERDUTY` | `service_key`, `account`, `service_name` |
-| `OPSGENIE` | `api_key`, `name`, `priority`, `region` |
-| `CALL` | `name`, `number` |
+Known `type` values: `EMAIL`, `SLACK`, `SLACK_APP`, `WEBHOOK`, `SMS`,
+`PAGERDUTY`, `OPSGENIE`, `CALL`.
+
+> **Note**: The `config` field (channel-specific JSON configuration) is not
+> exposed by this source. It can contain credential material such as webhook
+> authorization headers, PagerDuty service keys, and OpsGenie API keys.
+> Use the Checkly dashboard to inspect individual channel configuration.
 
 ### `checkly.dashboards`
 
@@ -200,8 +200,7 @@ SELECT
   send_failure,
   send_recovery,
   send_degraded,
-  ssl_expiry,
-  config
+  ssl_expiry
 FROM checkly.alert_channels
 ORDER BY type;
 ```
