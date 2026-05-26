@@ -33,7 +33,7 @@ auth:
 
 test_queries:
   - >-
-    SELECT wf_id, branch_name, commit_sha
+    SELECT wf_id, branch_name, commit_sha, initial_ppl_id
     FROM semaphore_ci.workflows
     WHERE project_id = 'your-project-uuid'
     LIMIT 5
@@ -50,7 +50,7 @@ test_queries:
   - >-
     SELECT name, status, triggered_by
     FROM semaphore_ci.promotions
-    WHERE pipeline_id = 'your-pipeline-uuid'
+    WHERE pipeline_id = 'initial-ppl-id-from-workflows'
     LIMIT 5
 
 tables:
@@ -227,12 +227,16 @@ tables:
     description: >-
       Pipelines for a Semaphore CI project. Each row is one pipeline
       execution within a workflow. Pass `project_id` or `wf_id` (or both)
-      — the API requires at least one.
+      — the API requires at least one. Note: the list endpoint does not
+      return `ppl_id`; use `initial_ppl_id` from `semaphore_ci.workflows`
+      to obtain the initial pipeline ID for promotions.
     guide: |
       Pass at least one of `project_id` or `wf_id`. The Semaphore API
       requires one to be present; providing both narrows results further.
-      Use `ppl_id` from the list response (when present) or the pipeline
-      name to identify pipelines.
+      The list endpoint does NOT return `ppl_id` — to get a pipeline ID
+      for the promotions table, use `initial_ppl_id` from
+      `semaphore_ci.workflows` (which gives the first pipeline for each
+      workflow).
       `state` values: pending, queuing, running, done, stopping.
       `result` values: passed, failed, stopped, canceled.
       Time-window filters `created_after`, `created_before`, `done_after`,
@@ -293,14 +297,6 @@ tables:
         expr:
           kind: from_filter
           key: project_id
-      - name: ppl_id
-        type: Utf8
-        nullable: true
-        description: Pipeline UUID. May be absent in list responses.
-        expr:
-          kind: path
-          path:
-            - ppl_id
       - name: name
         type: Utf8
         nullable: true
@@ -351,22 +347,6 @@ tables:
           kind: path
           path:
             - result
-      - name: result_reason
-        type: Utf8
-        nullable: true
-        description: Reason for the pipeline result (e.g. test, malformed_yaml).
-        expr:
-          kind: path
-          path:
-            - result_reason
-      - name: error_description
-        type: Utf8
-        nullable: true
-        description: Error details when a pipeline fails due to config or system errors.
-        expr:
-          kind: path
-          path:
-            - error_description
       - name: branch_name
         type: Utf8
         nullable: true
@@ -389,66 +369,6 @@ tables:
             path:
               - created_at
               - seconds
-      - name: pending_at
-        type: Timestamp
-        nullable: true
-        description: Time the pipeline entered the pending state (UTC).
-        expr:
-          kind: format_timestamp
-          input: seconds
-          expr:
-            kind: path
-            path:
-              - pending_at
-              - seconds
-      - name: queuing_at
-        type: Timestamp
-        nullable: true
-        description: Time the pipeline entered the queuing state (UTC).
-        expr:
-          kind: format_timestamp
-          input: seconds
-          expr:
-            kind: path
-            path:
-              - queuing_at
-              - seconds
-      - name: running_at
-        type: Timestamp
-        nullable: true
-        description: Time the pipeline started running (UTC).
-        expr:
-          kind: format_timestamp
-          input: seconds
-          expr:
-            kind: path
-            path:
-              - running_at
-              - seconds
-      - name: stopping_at
-        type: Timestamp
-        nullable: true
-        description: Time the pipeline began stopping (UTC).
-        expr:
-          kind: format_timestamp
-          input: seconds
-          expr:
-            kind: path
-            path:
-              - stopping_at
-              - seconds
-      - name: done_at
-        type: Timestamp
-        nullable: true
-        description: Time the pipeline finished (UTC). Use done_at - created_at for build duration.
-        expr:
-          kind: format_timestamp
-          input: seconds
-          expr:
-            kind: path
-            path:
-              - done_at
-              - seconds
 
   # ──────────────────────────────────────────────────────────────────────
   # promotions — list promotions for a pipeline
@@ -461,8 +381,9 @@ tables:
       Promotions triggered from a Semaphore CI pipeline. Each row is one
       promotion (e.g. deploy to production). Requires `pipeline_id` filter.
     guide: |
-      Requires `pipeline_id` — obtain from `semaphore_ci.pipelines`. A
-      promotion represents a triggered deployment or downstream pipeline.
+      Requires `pipeline_id` — obtain via `initial_ppl_id` from
+      `semaphore_ci.workflows`. A promotion represents a triggered
+      deployment or downstream pipeline.
       `status` values: passed, failed. `triggered_by` describes what
       triggered the promotion (e.g. "Pipeline Done request"). The API
       response only includes name, status, and triggered_by; timestamp
