@@ -20,7 +20,7 @@ cloud recording data through Coral SQL.
 
 ```sh
 curl -s -X POST https://zoom.us/oauth/token \
-  -H "Authorization: Basic $(echo -n 'CLIENT_ID:CLIENT_SECRET' | base64 -w 0)" \
+  -H "Authorization: Basic $(printf '%s' 'CLIENT_ID:CLIENT_SECRET' | base64 | tr -d '\n')" \
   -d "grant_type=account_credentials&account_id=ACCOUNT_ID"
 ```
 
