@@ -19,8 +19,10 @@ Personal Access Tokens (PAT) for scripts and CI pipelines.
 3. Copy the **Client ID** into `ASANA_CLIENT_ID` and the **Client Secret** into `ASANA_CLIENT_SECRET`.
 4. Run `coral source add --file sources/community/asana/manifest.yaml` and click **Sign in with Asana** to complete the browser-based flow.
 
-> **Scope:** The `default` scope grants read access to all workspaces, projects, tasks, and
-> sections visible to the authorized user.
+> **Scope:** The OAuth flow requests four narrow read-only scopes:
+> `workspaces:read`, `projects:read`, `tasks:read`, `sections:read`.
+> These grant read access to all workspaces, projects, tasks, and sections
+> visible to the authorized user — no write permissions are requested.
 
 ### Option 2 — Personal Access Token
 
@@ -39,17 +41,22 @@ API docs: [https://developers.asana.com/reference/rest-api-reference](https://de
 | Table | Description | Required filters | Optional filters |
 |---|---|---|---|
 | `workspaces` | All workspaces visible to the authenticated user | — | — |
-| `projects` | Projects across all workspaces or within one workspace | — | `workspace_gid` |
-| `tasks` | Tasks within a specific project | `project_gid` | — |
+| `projects` | Projects within a specific workspace | `workspace_gid` | — |
+| `tasks` | Tasks within a specific project | `project_gid` | `completed_since` |
 | `sections` | Sections (columns / swim-lanes) within a specific project | `project_gid` | — |
 
 ### Key design notes
 
 - **Start with `workspaces`.** It requires no filters and returns the GIDs you'll use everywhere else.
-- **`projects` is optionally scoped.** Without `workspace_gid` the API returns projects across all
-  workspaces visible to the token — useful for a global view. Supply `workspace_gid` to limit scope.
-- **`tasks` and `sections` require `project_gid`.** Asana's API models these as project-scoped
-  resources. Get the GID from `asana.projects.gid` first.
+- **`projects` requires `workspace_gid`.** Asana's API warns that `GET /projects` may timeout for
+  large domains without a workspace or team filter, so this source always requires one. Get the GID
+  from `asana.workspaces.gid`.
+- **`tasks` requires `project_gid`, and supports `completed_since`.** The Asana API documents
+  `completed_since` as a server-side filter: pass an ISO 8601 timestamp to fetch only incomplete
+  tasks and tasks completed after that timestamp, or pass the keyword `now` to fetch only open
+  tasks. Without it, the API returns the project's full task history — potentially very large on
+  active projects and rate-limit-unfriendly (Asana free tier: 150 req/min per user).
+- **`sections` requires `project_gid`.** Asana models sections as project-scoped resources.
 - **Typical flow:** `workspaces` → `projects` (filter by `workspace_gid`) → `tasks` or `sections`
   (filter by `project_gid`).
 - **`resource_subtype` on tasks** distinguishes milestones (`milestone`), approvals (`approval`),
@@ -61,22 +68,28 @@ API docs: [https://developers.asana.com/reference/rest-api-reference](https://de
 
 ```text
 workspaces   → all workspaces (entry point, no filter needed)
-projects     → projects in a workspace  (optional workspace_gid filter)
-tasks        → tasks in a project       (requires project_gid)
+projects     → projects in a workspace  (requires workspace_gid)
+tasks        → tasks in a project       (requires project_gid, optional completed_since)
 sections     → sections in a project    (requires project_gid)
 ```
 
-### `projects` optional filter
+### `projects` required filter
 
 | Filter | Description |
 |---|---|
-| `workspace_gid` | Limit projects to a specific workspace. Get the GID from `asana.workspaces`. |
+| `workspace_gid` | Workspace to list projects for. Get the GID from `asana.workspaces`. |
 
 ### `tasks` required filter
 
 | Filter | Description |
 |---|---|
 | `project_gid` | The project whose tasks to fetch. Get the GID from `asana.projects`. |
+
+### `tasks` optional filter
+
+| Filter | Description |
+|---|---|
+| `completed_since` | ISO 8601 timestamp or the keyword `now`. When set, the Asana API returns only incomplete tasks and tasks completed after the given timestamp. Recommended for active projects to avoid fetching the full task history. |
 
 ### `sections` required filter
 
@@ -98,12 +111,12 @@ coral sql "
   LIMIT 20
 "
 
-# Step 3 — list open tasks in a project
+# Step 3 — list open tasks in a project (server-side filter)
 coral sql "
   SELECT gid, name, due_on, assignee_name
   FROM asana.tasks
   WHERE project_gid = 'your-project-gid'
-    AND completed = false
+    AND completed_since = 'now'
   ORDER BY due_on ASC
   LIMIT 50
 "
@@ -147,7 +160,7 @@ WHERE workspace_gid = 'your-workspace-gid'
 ORDER BY name;
 ```
 
-### List open tasks in a project sorted by due date
+### List open tasks using server-side completed_since pushdown
 
 ```sql
 SELECT
@@ -159,25 +172,24 @@ SELECT
   resource_subtype
 FROM asana.tasks
 WHERE project_gid = 'your-project-gid'
-  AND completed = false
+  AND completed_since = 'now'
 ORDER BY due_on ASC NULLS LAST
 LIMIT 100;
 ```
 
-### Find overdue incomplete tasks
+### Find tasks completed in the last 7 days
 
 ```sql
 SELECT
   gid,
   name,
-  due_on,
-  assignee_name,
-  modified_at
+  completed_at,
+  assignee_name
 FROM asana.tasks
 WHERE project_gid = 'your-project-gid'
-  AND completed = false
-  AND due_on < current_date
-ORDER BY due_on ASC;
+  AND completed_since = '2025-05-20T00:00:00Z'
+  AND completed = true
+ORDER BY completed_at DESC;
 ```
 
 ### List sections in a project

@@ -17,6 +17,8 @@ inputs:
       For OAuth: create an app at https://app.asana.com/0/my-apps,
       set redirect URI to http://127.0.0.1:53682/oauth/callback,
       then provide your Client ID and Client Secret below.
+      The OAuth flow requests read-only scopes for workspaces, projects,
+      tasks, and sections.
     credential:
       methods:
         - type: oauth
@@ -39,7 +41,10 @@ inputs:
               scope:
                 delimiter: space
                 values:
-                  - default
+                  - workspaces:read
+                  - projects:read
+                  - tasks:read
+                  - sections:read
         - type: source_config
           label: Paste personal access token
           description: Paste an existing Asana Personal Access Token.
@@ -73,9 +78,8 @@ request_headers:
 
 test_queries:
   - SELECT * FROM asana.workspaces LIMIT 5
-  - SELECT gid, name, archived, created_at FROM asana.projects LIMIT 10
-  - SELECT gid, name, archived FROM asana.projects WHERE workspace_gid = 'your-workspace-gid' LIMIT 10
-  - SELECT gid, name, completed, due_on, assignee_name FROM asana.tasks WHERE project_gid = 'your-project-gid' LIMIT 10
+  - SELECT gid, name, archived, created_at FROM asana.projects WHERE workspace_gid = 'your-workspace-gid' LIMIT 10
+  - SELECT gid, name, completed, due_on, assignee_name FROM asana.tasks WHERE project_gid = 'your-project-gid' AND completed_since = 'now' LIMIT 10
   - SELECT gid, name FROM asana.sections WHERE project_gid = 'your-project-gid' LIMIT 10
 
 tables:
@@ -152,18 +156,19 @@ tables:
   # ────────────────────────────────────────────────────────────────────────────
   - name: projects
     description: >-
-      Projects visible to the authenticated user, optionally scoped to a
-      specific workspace. Each row is one project. Use gid as the
+      Projects within a specific Asana workspace. Each row is one project.
+      Requires workspace_gid from the workspaces table. Use gid as the
       project_gid filter for tasks and sections.
     guide: |
-      Filter by workspace_gid to limit results to one workspace — the Asana
-      API requires at least a workspace or team filter for large accounts.
+      Requires workspace_gid (gid from asana.workspaces). The Asana API
+      warns that GET /projects may timeout for large domains without a
+      workspace filter, so this source always requires one.
       gid is the project identifier to pass as project_gid in tasks and
       sections. owner_gid and workspace_gid can be used to join back to the
       workspaces table.
     filters:
       - name: workspace_gid
-        required: false
+        required: true
     request:
       method: GET
       path: /projects
@@ -329,15 +334,23 @@ tables:
   - name: tasks
     description: >-
       Tasks in a specific Asana project. Each row is one task. Requires
-      project_gid from the projects table.
+      project_gid from the projects table. Use the optional completed_since
+      filter to avoid fetching the full task history.
     guide: |
-      Requires project_gid (gid from asana.projects). Filter completed = false
-      to see only open tasks. due_on and due_at are independent — due_on is
-      for date-only due dates while due_at carries a time component.
-      assignee_gid joins back to any people/members table.
+      Requires project_gid (gid from asana.projects). Use completed_since
+      to push a time-window filter to the Asana API — the server returns
+      only incomplete tasks and tasks completed after that timestamp.
+      Pass the keyword 'now' to fetch only incomplete tasks without any
+      completed ones, or an ISO 8601 timestamp to bound the window.
+      Without completed_since, the API returns the full task history of
+      the project, which can be large and hit rate limits (150 req/min
+      on Asana free tier). due_on and due_at are independent — due_on
+      is for date-only due dates while due_at carries a time component.
     filters:
       - name: project_gid
         required: true
+      - name: completed_since
+        required: false
     request:
       method: GET
       path: /projects/{{filter.project_gid}}/tasks
@@ -345,6 +358,9 @@ tables:
         - name: opt_fields
           from: literal
           value: gid,name,completed,completed_at,due_on,due_at,start_on,start_at,created_at,modified_at,notes,assignee.gid,assignee.name,resource_type,resource_subtype
+        - name: completed_since
+          from: filter
+          key: completed_since
     response:
       rows_path:
         - data
@@ -506,6 +522,16 @@ tables:
           kind: path
           path:
             - resource_subtype
+      - name: completed_since
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: >-
+          Server-side filter: only return tasks that are incomplete or completed
+          after this ISO 8601 timestamp. Pass 'now' to fetch only open tasks.
+          Pushed to the Asana API as the completed_since query parameter.
+        expr:
+          kind: "null"
 
   # ────────────────────────────────────────────────────────────────────────────
   # sections — sections within a specific project
