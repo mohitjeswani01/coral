@@ -4,54 +4,16 @@ dsl_version: 3
 backend: http
 description: >-
   Query your Zoom user profile, scheduled meetings, and cloud recordings.
-  Read-only access via OAuth authorization-code flow or a pasted access token.
+  Read-only access via a Zoom access token (OAuth or Server-to-Server).
 inputs:
-  ZOOM_CLIENT_ID:
-    kind: variable
-    hint: |
-      Zoom OAuth app Client ID. Create a user-managed OAuth app at
-      https://marketplace.zoom.us/develop/create, select "User-managed app",
-      and copy the Client ID from the app credentials page.
-  ZOOM_CLIENT_SECRET:
-    kind: secret
-    hint: |
-      Zoom OAuth app Client Secret from the same app credentials page.
   ZOOM_ACCESS_TOKEN:
     kind: secret
     hint: |
-      Zoom OAuth access token. Use "Connect with Zoom" to authenticate
-      interactively via the OAuth authorization-code flow, or paste an
-      existing access token. Required scopes: user:read:user,
+      Zoom access token with scopes: user:read:user,
       meeting:read:list_meetings, cloud_recording:read:list_user_recordings.
-    credential:
-      methods:
-        - type: oauth
-          label: Connect with Zoom
-          description: Authenticate via Zoom OAuth authorization-code flow.
-          oauth:
-            flow:
-              type: authorization_code
-              pkce: disabled
-            redirect_uri: http://127.0.0.1:53682/oauth/callback
-            redirect_uri_port_mode: fixed
-            endpoints:
-              authorization_url: https://zoom.us/oauth/authorize
-              token_url: https://zoom.us/oauth/token
-            client:
-              id:
-                input: ZOOM_CLIENT_ID
-              secret:
-                input: ZOOM_CLIENT_SECRET
-                transport: basic_auth
-            scopes:
-              scope:
-                delimiter: space
-                values:
-                  - user:read:user
-                  - meeting:read:list_meetings
-                  - cloud_recording:read:list_user_recordings
-        - type: source_config
-          label: Paste token
+      Obtain a token from a Zoom Server-to-Server OAuth app or any Zoom
+      OAuth flow. See https://developers.zoom.us/docs/internal-apps/s2s-oauth/
+      for Server-to-Server setup.
 base_url: https://api.zoom.us/v2
 auth:
   type: HeaderAuth

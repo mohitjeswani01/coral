@@ -1,54 +1,37 @@
 # Zoom community source
 
 The `zoom` community source exposes read-only Zoom user profile, meeting, and
-cloud recording data through Coral SQL. This is the first community source to
-use OAuth authorization-code flow for authentication.
+cloud recording data through Coral SQL.
 
 ## Setup
 
-This source supports two authentication paths. Both produce a Bearer token
-that Coral uses for API requests.
+### 1. Create a Zoom Server-to-Server OAuth app
 
-### Option A: OAuth browser flow
-
-Create a [user-managed OAuth app](https://marketplace.zoom.us/develop/create)
-in the Zoom App Marketplace:
-
-1. Choose **General App** (user-managed) with OAuth.
-2. Under **Scopes**, add:
+1. Go to the [Zoom App Marketplace](https://marketplace.zoom.us/develop/create).
+2. Choose **Server-to-Server OAuth** and create the app.
+3. Under **Scopes**, add:
    - `user:read:user`
    - `meeting:read:list_meetings`
    - `cloud_recording:read:list_user_recordings`
-3. Set the **OAuth Redirect URL** to exactly:
-   ```
-   http://127.0.0.1:53682/oauth/callback
-   ```
-4. Add the same URL to the **OAuth Allow Lists**.
-5. Activate the app, then copy the **Client ID** and **Client Secret**.
+4. **Activate** the app.
+5. Copy the **Account ID**, **Client ID**, and **Client Secret**.
+
+### 2. Obtain an access token
 
 ```sh
-export ZOOM_CLIENT_ID="<client_id>"
-export ZOOM_CLIENT_SECRET="<client_secret>"
-cargo run -p coral-cli -- source add --interactive --file sources/community/zoom/manifest.yaml
+curl -s -X POST https://zoom.us/oauth/token \
+  -H "Authorization: Basic $(echo -n 'CLIENT_ID:CLIENT_SECRET' | base64 -w 0)" \
+  -d "grant_type=account_credentials&account_id=ACCOUNT_ID"
 ```
 
-Coral opens a browser for authorization. After granting access, Coral stores
-the token automatically.
+Copy the `access_token` from the JSON response. Tokens expire after one hour.
 
-### Option B: Paste an access token
-
-Obtain a Zoom access token from a
-[Server-to-Server OAuth app](https://developers.zoom.us/docs/internal-apps/s2s-oauth/)
-or any other method, then paste it directly:
+### 3. Install the source
 
 ```sh
 export ZOOM_ACCESS_TOKEN="<token>"
 cargo run -p coral-cli -- source add --file sources/community/zoom/manifest.yaml
 ```
-
-This path does not require `ZOOM_CLIENT_ID` or `ZOOM_CLIENT_SECRET`. The
-token must include the scopes listed above. Server-to-Server tokens expire
-after one hour; re-run `source add` to refresh.
 
 ## Tables
 
@@ -74,6 +57,8 @@ resources.
 - **Recording date range is capped at 1 month per query.** The `from_date`
   and `to_date` filters are required and must not span more than one calendar
   month.
+- **Tokens expire after one hour.** Re-run the `curl` command and
+  `source add` to refresh.
 
 ## Example queries
 
@@ -128,20 +113,11 @@ Lint the manifest:
 cargo run -p coral-cli -- source lint sources/community/zoom/manifest.yaml
 ```
 
-Install and test with a token (Option B):
+Install and test:
 
 ```sh
 export ZOOM_ACCESS_TOKEN="<token>"
 cargo run -p coral-cli -- source add --file sources/community/zoom/manifest.yaml
-cargo run -p coral-cli -- source test zoom
-```
-
-Or using OAuth (Option A):
-
-```sh
-export ZOOM_CLIENT_ID="<client_id>"
-export ZOOM_CLIENT_SECRET="<client_secret>"
-cargo run -p coral-cli -- source add --interactive --file sources/community/zoom/manifest.yaml
 cargo run -p coral-cli -- source test zoom
 ```
 
@@ -154,11 +130,6 @@ cargo run -p coral-cli -- sql "SELECT table_name, column_name, is_required_filte
 
 ## Notes
 
-- This is the first community source using OAuth credential methods. The OAuth
-  block under `ZOOM_ACCESS_TOKEN` uses `authorization_code` flow with a fixed
-  loopback redirect URI on port 53682.
-- Zoom's token endpoint requires HTTP Basic authentication for the client
-  credentials exchange (`transport: basic_auth`).
 - Zoom sends `X-RateLimit-Remaining` and `Retry-After` headers on every
   response. The manifest declares these under `rate_limit` so Coral
   automatically backs off when a rate limit is hit.
