@@ -1,0 +1,467 @@
+dsl_version: 3
+name: knock
+version: 0.1.0
+backend: http
+description: >-
+  Query Knock notification messages, users, tenants, and schedules
+  as SQL tables. Inspect delivery statuses, recipient rosters,
+  multi-tenant configurations, and scheduled notifications.
+  Join with Novu, Resend, or Postmark for cross-source notification
+  intelligence.
+base_url: https://api.knock.app
+
+inputs:
+  KNOCK_API_KEY:
+    kind: secret
+    hint: |
+      Your Knock secret API key (starts with sk_test_ or sk_live_).
+      Find it in the Knock dashboard under Platform → API Keys.
+      See https://docs.knock.app/api-reference/overview/api-keys
+
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.KNOCK_API_KEY}}
+
+rate_limit:
+  extra_statuses:
+    - 429
+  retry_after_header: Retry-After
+
+test_queries:
+  - SELECT id, status, workflow, tenant, inserted_at FROM knock.messages LIMIT 5
+  - SELECT id, name, email, timezone FROM knock.users LIMIT 5
+  - SELECT id, name, created_at FROM knock.tenants LIMIT 5
+  - SELECT id, workflow, tenant, inserted_at FROM knock.schedules LIMIT 5
+
+tables:
+
+  # ------------------------------------------------------------------
+  # knock.messages — notification delivery records
+  # GET /v1/messages
+  # Cursor pagination via page_info.after, entries wrapper.
+  # ------------------------------------------------------------------
+  - name: messages
+    description: >-
+      Notification messages delivered through Knock workflows. Each row
+      is one message with its delivery status, channel, workflow origin,
+      tenant scope, and engagement timestamps. Use this table to audit
+      notification history, track delivery rates, and diagnose failures.
+    guide: |
+      No required filters — returns all messages across all workflows.
+      Optionally filter by channel_id, workflow, tenant, or status.
+
+      status values: queued, sent, delivered, undelivered, not_sent.
+      read_at, seen_at, archived_at track recipient engagement.
+
+      Example:
+        SELECT id, status, workflow, tenant, inserted_at
+        FROM knock.messages
+        WHERE status = 'delivered'
+        ORDER BY inserted_at DESC
+        LIMIT 50
+    filters:
+      - name: channel_id
+      - name: workflow
+      - name: tenant
+      - name: status
+    request:
+      method: GET
+      path: /v1/messages
+      query:
+        - name: channel_id
+          from: filter
+          key: channel_id
+        - name: workflow
+          from: filter
+          key: workflow
+        - name: tenant
+          from: filter
+          key: tenant
+        - name: status
+          from: filter
+          key: status
+    response:
+      rows_path:
+        - entries
+    pagination:
+      mode: cursor_query
+      cursor_param: after
+      response_cursor_path:
+        - page_info
+        - after
+      page_size:
+        default: 50
+        max: 50
+        query_param: page_size
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Unique message identifier.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: channel_id
+        type: Utf8
+        nullable: true
+        description: Channel used for delivery (e.g. email, push, in-app).
+        expr:
+          kind: path
+          path:
+            - channel_id
+      - name: workflow
+        type: Utf8
+        nullable: true
+        description: Workflow key that triggered this message.
+        expr:
+          kind: path
+          path:
+            - workflow
+      - name: tenant
+        type: Utf8
+        nullable: true
+        description: Tenant ID if multi-tenant notifications are used.
+        expr:
+          kind: path
+          path:
+            - tenant
+      - name: status
+        type: Utf8
+        nullable: true
+        description: >-
+          Delivery status: queued, sent, delivered, undelivered, or
+          not_sent.
+        expr:
+          kind: path
+          path:
+            - status
+      - name: source
+        type: Utf8
+        nullable: true
+        description: Source information for the message.
+        expr:
+          kind: path
+          path:
+            - source
+      - name: inserted_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the message was created.
+        expr:
+          kind: path
+          path:
+            - inserted_at
+      - name: updated_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the message was last updated.
+        expr:
+          kind: path
+          path:
+            - updated_at
+      - name: read_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the recipient read the message.
+        expr:
+          kind: path
+          path:
+            - read_at
+      - name: seen_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the recipient saw the message.
+        expr:
+          kind: path
+          path:
+            - seen_at
+      - name: archived_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the message was archived.
+        expr:
+          kind: path
+          path:
+            - archived_at
+
+  # ------------------------------------------------------------------
+  # knock.users — notification recipients
+  # GET /v1/users
+  # Cursor pagination via page_info.after, entries wrapper.
+  # ------------------------------------------------------------------
+  - name: users
+    description: >-
+      Users (recipients) registered in the Knock environment. Each row
+      is one user with their contact details and locale settings. Users
+      are the recipients of notifications sent through workflows.
+    guide: |
+      No required filters. Returns all users in the environment.
+
+      id is your application's identifier for the user.
+      Custom properties synced to Knock are merged into the user object
+      but are not exposed as fixed columns here.
+
+      Example:
+        SELECT id, name, email, phone_number, created_at
+        FROM knock.users
+        LIMIT 50
+    request:
+      method: GET
+      path: /v1/users
+    response:
+      rows_path:
+        - entries
+    pagination:
+      mode: cursor_query
+      cursor_param: after
+      response_cursor_path:
+        - page_info
+        - after
+      page_size:
+        default: 50
+        max: 50
+        query_param: page_size
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Customer-defined user identifier.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: true
+        description: User full name.
+        expr:
+          kind: path
+          path:
+            - name
+      - name: email
+        type: Utf8
+        nullable: true
+        description: User email address.
+        expr:
+          kind: path
+          path:
+            - email
+      - name: phone_number
+        type: Utf8
+        nullable: true
+        description: User phone number.
+        expr:
+          kind: path
+          path:
+            - phone_number
+      - name: avatar
+        type: Utf8
+        nullable: true
+        description: URL to user avatar image.
+        expr:
+          kind: path
+          path:
+            - avatar
+      - name: timezone
+        type: Utf8
+        nullable: true
+        description: User timezone (e.g. America/New_York).
+        expr:
+          kind: path
+          path:
+            - timezone
+      - name: locale
+        type: Utf8
+        nullable: true
+        description: User locale (e.g. en, fr, de).
+        expr:
+          kind: path
+          path:
+            - locale
+      - name: created_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the user was created.
+        expr:
+          kind: path
+          path:
+            - created_at
+      - name: updated_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the user was last updated.
+        expr:
+          kind: path
+          path:
+            - updated_at
+
+  # ------------------------------------------------------------------
+  # knock.tenants — multi-tenant organization records
+  # GET /v1/tenants
+  # Cursor pagination via page_info.after, entries wrapper.
+  # ------------------------------------------------------------------
+  - name: tenants
+    description: >-
+      Tenants configured in the Knock environment. Tenants represent
+      organizations, teams, or accounts in multi-tenant applications.
+      Use tenant IDs to scope notifications and join with the messages
+      table on the tenant column.
+    guide: |
+      No required filters. Returns all tenants in the environment.
+
+      Tenants are system-level objects in Knock. Custom properties and
+      branding overrides stored on tenants are available in the
+      properties and settings fields but are not exposed as fixed
+      columns here.
+
+      Example:
+        SELECT id, name, created_at
+        FROM knock.tenants
+        LIMIT 50
+    filters:
+      - name: tenant_id
+    request:
+      method: GET
+      path: /v1/tenants
+      query:
+        - name: tenant_id
+          from: filter
+          key: tenant_id
+    response:
+      rows_path:
+        - entries
+    pagination:
+      mode: cursor_query
+      cursor_param: after
+      response_cursor_path:
+        - page_info
+        - after
+      page_size:
+        default: 50
+        max: 50
+        query_param: page_size
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Tenant identifier.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: true
+        description: Tenant display name.
+        expr:
+          kind: path
+          path:
+            - name
+      - name: created_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the tenant was created.
+        expr:
+          kind: path
+          path:
+            - created_at
+      - name: updated_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the tenant was last updated.
+        expr:
+          kind: path
+          path:
+            - updated_at
+
+  # ------------------------------------------------------------------
+  # knock.schedules — scheduled workflow notifications
+  # GET /v1/schedules
+  # Cursor pagination via page_info.after, entries wrapper.
+  # ------------------------------------------------------------------
+  - name: schedules
+    description: >-
+      Scheduled notifications in the Knock environment. Each row is one
+      schedule entry linking a workflow to its scheduled execution.
+      Use this table for operational visibility into upcoming and
+      recurring notification deliveries.
+    guide: |
+      No required filters. Returns all schedules in the environment.
+      Optionally filter by workflow key or tenant.
+
+      Example:
+        SELECT id, workflow, tenant, inserted_at
+        FROM knock.schedules
+        WHERE workflow = 'welcome-series'
+        LIMIT 50
+    filters:
+      - name: workflow
+      - name: tenant
+    request:
+      method: GET
+      path: /v1/schedules
+      query:
+        - name: workflow
+          from: filter
+          key: workflow
+        - name: tenant
+          from: filter
+          key: tenant
+    response:
+      rows_path:
+        - entries
+    pagination:
+      mode: cursor_query
+      cursor_param: after
+      response_cursor_path:
+        - page_info
+        - after
+      page_size:
+        default: 50
+        max: 50
+        query_param: page_size
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Schedule identifier.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: workflow
+        type: Utf8
+        nullable: true
+        description: Workflow key this schedule is associated with.
+        expr:
+          kind: path
+          path:
+            - workflow
+      - name: tenant
+        type: Utf8
+        nullable: true
+        description: Tenant ID scoping this schedule.
+        expr:
+          kind: path
+          path:
+            - tenant
+      - name: inserted_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the schedule was created.
+        expr:
+          kind: path
+          path:
+            - inserted_at
+      - name: updated_at
+        type: Utf8
+        nullable: true
+        description: ISO 8601 timestamp when the schedule was last updated.
+        expr:
+          kind: path
+          path:
+            - updated_at
