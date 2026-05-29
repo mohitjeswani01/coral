@@ -1,0 +1,453 @@
+name: productboard
+version: 0.1.0
+dsl_version: 3
+backend: http
+description: >-
+  Query notes, features, members, and teams from Productboard. Join with
+  bundled sources like Slack, Intercom, or Jira.
+inputs:
+  PRODUCTBOARD_ACCESS_TOKEN:
+    kind: secret
+    required: true
+    hint: |
+      Your Productboard Personal Access Token (Bearer).
+      Generate from: Workspace Settings → Integrations → Public APIs → Add Token.
+      Requires at least a Pro plan.
+      Note: member name and email fields return [redacted] without
+      the members:pii:read scope on your token.
+      Docs: https://developer.productboard.com/reference/api-token
+base_url: https://api.productboard.com
+auth:
+  type: HeaderAuth
+  headers:
+    - name: Authorization
+      from: template
+      template: Bearer {{input.PRODUCTBOARD_ACCESS_TOKEN}}
+test_queries:
+  - SELECT * FROM productboard.notes LIMIT 5
+  - SELECT id, name, status_name, created_at FROM productboard.features LIMIT 10
+  - SELECT id, name, email, role FROM productboard.members LIMIT 10
+  - SELECT id, name, handle FROM productboard.teams LIMIT 10
+  - SELECT id, name FROM productboard.notes WHERE archived = false LIMIT 10
+tables:
+  - name: notes
+    description: Productboard notes (feedback and conversations).
+    guide: |
+      Query customer feedback and notes. Use `archived` or `processed` filters
+      to narrow down results. The `content` column contains the raw note body.
+    fetch_limit_default: 100
+    request:
+      method: GET
+      path: /v2/notes
+      query:
+        - name: archived
+          from: filter_bool
+          key: archived
+        - name: processed
+          from: filter_bool
+          key: processed
+        - name: createdFrom
+          from: filter
+          key: created_from
+        - name: createdTo
+          from: filter
+          key: created_to
+    response:
+      rows_path:
+        - data
+      allow_404_empty: false
+      row_strategy: direct
+    pagination:
+      mode: cursor_query
+      cursor_param: pageCursor
+      response_cursor_path:
+        - links
+        - next
+      page_size:
+        default: 100
+        max: 100
+        query_param: pageSize
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Unique identifier for the note.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: type
+        type: Utf8
+        nullable: true
+        description: Type of the note (e.g. textNote, conversationNote).
+        expr:
+          kind: path
+          path:
+            - type
+      - name: name
+        type: Utf8
+        nullable: true
+        description: Title or subject of the note.
+        expr:
+          kind: path
+          path:
+            - fields
+            - name
+      - name: content
+        type: Json
+        nullable: true
+        description: Content payload (can be text or an array of messages).
+        expr:
+          kind: path
+          path:
+            - fields
+            - content
+      - name: owner_id
+        type: Utf8
+        nullable: true
+        description: User ID of the note owner. Join to productboard.members.id.
+        expr:
+          kind: path
+          path:
+            - fields
+            - owner
+            - id
+      - name: processed
+        type: Boolean
+        nullable: true
+        description: Whether the note has been processed.
+        expr:
+          kind: path
+          path:
+            - fields
+            - processed
+      - name: archived
+        type: Boolean
+        nullable: true
+        description: Whether the note is archived.
+        expr:
+          kind: path
+          path:
+            - fields
+            - archived
+      - name: created_at
+        type: Timestamp
+        nullable: true
+        description: Note creation timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - createdAt
+      - name: updated_at
+        type: Timestamp
+        nullable: true
+        description: Note last update timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - updatedAt
+      - name: created_from
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Filter for notes created after this date (ISO 8601).
+      - name: created_to
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Filter for notes created before this date (ISO 8601).
+  - name: features
+    description: Productboard features.
+    guide: |
+      Query product features. Due to API structure, we query the `entities`
+      endpoint with a hardcoded `type=feature` filter. Status names are
+      workspace-specific.
+    fetch_limit_default: 100
+    request:
+      method: GET
+      path: /v2/entities
+      query:
+        - name: type
+          from: literal
+          value: feature
+        - name: status[name]
+          from: filter
+          key: status_name
+    response:
+      rows_path:
+        - data
+      allow_404_empty: false
+      row_strategy: direct
+    pagination:
+      mode: cursor_query
+      cursor_param: pageCursor
+      response_cursor_path:
+        - links
+        - next
+      page_size:
+        default: 100
+        max: 100
+        query_param: pageSize
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Unique identifier for the feature.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: true
+        description: Name of the feature.
+        expr:
+          kind: path
+          path:
+            - fields
+            - name
+      - name: status_id
+        type: Utf8
+        nullable: true
+        description: Internal ID of the feature's status.
+        expr:
+          kind: path
+          path:
+            - fields
+            - status
+            - id
+      - name: status_name
+        type: Utf8
+        nullable: true
+        description: Human-readable status name (e.g., In Progress).
+        expr:
+          kind: path
+          path:
+            - fields
+            - status
+            - name
+      - name: timeframe_start
+        type: Utf8
+        nullable: true
+        description: Target start date of the feature timeframe.
+        expr:
+          kind: path
+          path:
+            - fields
+            - timeframe
+            - startDate
+      - name: timeframe_end
+        type: Utf8
+        nullable: true
+        description: Target end date of the feature timeframe.
+        expr:
+          kind: path
+          path:
+            - fields
+            - timeframe
+            - endDate
+      - name: created_at
+        type: Timestamp
+        nullable: true
+        description: Feature creation timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - createdAt
+      - name: updated_at
+        type: Timestamp
+        nullable: true
+        description: Feature last update timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - updatedAt
+  - name: members
+    description: Productboard workspace members.
+    guide: |
+      Query workspace members. Requires the `members:pii:read` scope on your
+      token, otherwise `name` and `email` fields will return `[redacted]`.
+    fetch_limit_default: 100
+    request:
+      method: GET
+      path: /v2/members
+      query:
+        - name: query
+          from: filter
+          key: query
+    response:
+      rows_path:
+        - data
+      allow_404_empty: false
+      row_strategy: direct
+    pagination:
+      mode: cursor_query
+      cursor_param: pageCursor
+      response_cursor_path:
+        - links
+        - next
+      page_size:
+        default: 100
+        max: 100
+        query_param: pageSize
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Unique identifier for the member.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: true
+        description: Full name of the member.
+        expr:
+          kind: path
+          path:
+            - fields
+            - name
+      - name: email
+        type: Utf8
+        nullable: true
+        description: Email address of the member.
+        expr:
+          kind: path
+          path:
+            - fields
+            - email
+      - name: role
+        type: Utf8
+        nullable: true
+        description: Member role (e.g. maker, contributor, viewer).
+        expr:
+          kind: path
+          path:
+            - fields
+            - role
+      - name: disabled
+        type: Boolean
+        nullable: true
+        description: Whether the member account is disabled.
+        expr:
+          kind: path
+          path:
+            - fields
+            - disabled
+      - name: created_at
+        type: Timestamp
+        nullable: true
+        description: Member creation timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - createdAt
+      - name: updated_at
+        type: Timestamp
+        nullable: true
+        description: Member last update timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - updatedAt
+  - name: teams
+    description: Productboard workspace teams.
+    guide: |
+      Query workspace teams. Use team IDs to group or analyze features and notes.
+    fetch_limit_default: 100
+    request:
+      method: GET
+      path: /v2/teams
+      query: []
+    response:
+      rows_path:
+        - data
+      allow_404_empty: false
+      row_strategy: direct
+    pagination:
+      mode: cursor_query
+      cursor_param: pageCursor
+      response_cursor_path:
+        - links
+        - next
+      page_size:
+        default: 100
+        max: 100
+        query_param: pageSize
+    columns:
+      - name: id
+        type: Utf8
+        nullable: false
+        description: Unique identifier for the team.
+        expr:
+          kind: path
+          path:
+            - id
+      - name: name
+        type: Utf8
+        nullable: false
+        description: Name of the team.
+        expr:
+          kind: path
+          path:
+            - fields
+            - name
+      - name: handle
+        type: Utf8
+        nullable: true
+        description: Internal handle for the team.
+        expr:
+          kind: path
+          path:
+            - fields
+            - handle
+      - name: description
+        type: Utf8
+        nullable: true
+        description: Description of the team.
+        expr:
+          kind: path
+          path:
+            - fields
+            - description
+      - name: created_at
+        type: Timestamp
+        nullable: true
+        description: Team creation timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - createdAt
+      - name: updated_at
+        type: Timestamp
+        nullable: true
+        description: Team last update timestamp.
+        expr:
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - updatedAt
