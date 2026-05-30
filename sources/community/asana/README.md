@@ -16,13 +16,16 @@ Personal Access Tokens (PAT) for scripts and CI pipelines.
 
 1. Go to [https://app.asana.com/0/my-apps](https://app.asana.com/0/my-apps) and create a new app.
 2. Under **Redirect URIs**, add exactly: `http://127.0.0.1:53682/oauth/callback`
-3. Copy the **Client ID** into `ASANA_CLIENT_ID` and the **Client Secret** into `ASANA_CLIENT_SECRET`.
-4. Run `coral source add --file sources/community/asana/manifest.yaml` and click **Sign in with Asana** to complete the browser-based flow.
+3. Under **Permission scopes**, enable the **`default`** scope (Full Permissions).
+4. Copy the **Client ID** into `ASANA_CLIENT_ID` and the **Client Secret** into `ASANA_CLIENT_SECRET`.
+5. Run `coral source add --file sources/community/asana/manifest.yaml` and click **Sign in with Asana** to complete the browser-based flow.
 
-> **Scope:** The OAuth flow requests four narrow read-only scopes:
-> `workspaces:read`, `projects:read`, `tasks:read`, `sections:read`.
-> These grant read access to all workspaces, projects, tasks, and sections
-> visible to the authorized user — no write permissions are requested.
+> **Why Full Permissions?** Asana's OAuth scopes are per-resource (e.g., `projects:read`,
+> `tasks:read`), but the [Sections API](https://developers.asana.com/reference/getsectionsforproject)
+> has no documented granular scope. Asana states that endpoints without an associated scope
+> require the `default` scope (Full Permissions). Since this source includes a `sections` table,
+> the OAuth flow requests `default` to cover all four tables. If the `default` scope is not
+> enabled in your app's Permission scopes, the OAuth flow will fail with `forbidden_scopes`.
 
 ### Option 2 — Personal Access Token
 

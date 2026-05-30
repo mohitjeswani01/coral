@@ -16,9 +16,11 @@ inputs:
       from https://app.asana.com/0/my-apps → "Create new token".
       For OAuth: create an app at https://app.asana.com/0/my-apps,
       set redirect URI to http://127.0.0.1:53682/oauth/callback,
-      then provide your Client ID and Client Secret below.
-      The OAuth flow requests read-only scopes for workspaces, projects,
-      tasks, and sections.
+      and enable the "default" scope under Permission scopes in your app
+      settings, then provide your Client ID and Client Secret below.
+      The OAuth flow requests the "default" scope (Full Permissions)
+      because the Sections API has no granular OAuth scope in Asana's
+      current scope list.
     credential:
       methods:
         - type: oauth
@@ -41,10 +43,7 @@ inputs:
               scope:
                 delimiter: space
                 values:
-                  - workspaces:read
-                  - projects:read
-                  - tasks:read
-                  - sections:read
+                  - default
         - type: source_config
           label: Paste personal access token
           description: Paste an existing Asana Personal Access Token.
