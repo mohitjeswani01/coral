@@ -26,7 +26,7 @@ This source uses **OAuth 2.0 authorization-code flow with PKCE**. You need a Goo
 coral source add --file sources/community/google_tasks/manifest.yaml
 ```
 
-Coral requests the `tasks.readonly` scope. The authorization URL includes `access_type=offline&prompt=consent` so Google issues a refresh token on first consent, keeping the token alive across sessions.
+Coral uses authorization-code flow with PKCE and a fixed loopback redirect URI (`http://127.0.0.1:53682/oauth/callback`). The authorization URL includes `access_type=offline&prompt=consent` so Google issues a refresh token on first consent, keeping the token alive across sessions.
 
 ### Required scope
 
@@ -40,22 +40,18 @@ Coral requests the `tasks.readonly` scope. The authorization URL includes `acces
 
 Lists metadata for all task lists owned by or shared with the authenticated user. Entry-point table; no required filters.
 
-Filtering by `id` routes directly to the single-object endpoint (`GET /tasks/v1/users/@me/lists/{id}`) and returns exactly one row.
-
 ### `google_tasks.tasks`
 
 Lists individual task items from a specific task list.
 
 **`tasklist_id` is required** — obtain it from `google_tasks.task_lists`.
 
-Filtering by both `tasklist_id` and `id` routes directly to the single-object endpoint (`GET /tasks/v1/lists/{tasklist}/tasks/{id}`) and returns exactly one row.
-
 **API-level pushdown filters** (sent as query parameters to Google's API):
 
-| Filter | Type | Default | Description |
+| Filter column | Type | API default | Description |
 |---|---|---|---|
-| `show_completed` | Boolean | false | Include completed tasks |
-| `show_hidden` | Boolean | false | Include hidden tasks (needed for tasks completed in Google apps) |
+| `show_completed` | Boolean | **true** | Include completed tasks. Google returns them by default; set `false` to exclude. |
+| `show_hidden` | Boolean | false | Include hidden tasks (tasks completed in Google first-party clients) |
 | `show_deleted` | Boolean | false | Include deleted tasks |
 | `show_assigned` | Boolean | false | Include tasks assigned from Google Docs or Google Chat |
 | `due_min` | String | — | Lower bound for due date (RFC 3339) |
@@ -63,6 +59,8 @@ Filtering by both `tasklist_id` and `id` routes directly to the single-object en
 | `completed_min` | String | — | Lower bound for completion date (RFC 3339) |
 | `completed_max` | String | — | Upper bound for completion date (RFC 3339) |
 | `updated_min` | String | — | Lower bound for last modification date (RFC 3339) |
+
+These filters are exposed as virtual columns so they can be used in `WHERE` clauses and appear in query results.
 
 ## Rate limits
 
@@ -76,7 +74,7 @@ Google Tasks enforces a courtesy quota of **50,000 queries per day** per project
 SELECT id, title, updated FROM google_tasks.task_lists;
 ```
 
-### 2. Query incomplete tasks from a specific list
+### 2. Query tasks that still need action
 
 ```sql
 SELECT id, title, due
@@ -85,7 +83,7 @@ WHERE tasklist_id = 'your_list_id_here'
   AND status = 'needsAction';
 ```
 
-### 3. Find completed tasks in a single list (with metadata join)
+### 3. Find completed tasks in a list (with list metadata join)
 
 ```sql
 SELECT
@@ -98,17 +96,25 @@ WHERE t.tasklist_id = 'your_list_id_here'
   AND t.status = 'completed';
 ```
 
-### 4. Include hidden and completed tasks via API pushdown
+### 4. Exclude completed tasks (override the API default)
+
+```sql
+SELECT id, title, due
+FROM google_tasks.tasks
+WHERE tasklist_id = 'your_list_id_here'
+  AND show_completed = false;
+```
+
+### 5. Include hidden tasks
 
 ```sql
 SELECT id, title, completed, hidden
 FROM google_tasks.tasks
 WHERE tasklist_id = 'your_list_id_here'
-  AND show_completed = true
   AND show_hidden = true;
 ```
 
-### 5. Include tasks assigned from Google Docs or Chat
+### 6. Include tasks assigned from Google Docs or Chat
 
 ```sql
 SELECT id, title, status, web_view_link
@@ -117,7 +123,7 @@ WHERE tasklist_id = 'your_list_id_here'
   AND show_assigned = true;
 ```
 
-### 6. Filter tasks by due date range
+### 7. Filter tasks by due date range
 
 ```sql
 SELECT title, due
@@ -127,24 +133,10 @@ WHERE tasklist_id = 'your_list_id_here'
   AND due_max = '2024-01-31T23:59:59Z';
 ```
 
-### 7. Single-item point queries (route directly to GET endpoints)
-
-```sql
--- Routes to GET /tasks/v1/users/@me/lists/{id} — returns one row
-SELECT * FROM google_tasks.task_lists WHERE id = 'your_list_id_here';
-
--- Routes to GET /tasks/v1/lists/{tasklist}/tasks/{id} — returns one row
-SELECT * FROM google_tasks.tasks
-WHERE tasklist_id = 'your_list_id_here'
-  AND id = 'your_task_id_here';
-```
-
 ## API reference
 
 - [Google Tasks REST API v1](https://developers.google.com/tasks/reference/rest/v1)
 - [tasks.tasklists.list](https://developers.google.com/workspace/tasks/reference/rest/v1/tasklists/list)
-- [tasks.tasklists.get](https://developers.google.com/workspace/tasks/reference/rest/v1/tasklists/get)
 - [tasks.tasks.list](https://developers.google.com/workspace/tasks/reference/rest/v1/tasks/list)
-- [tasks.tasks.get](https://developers.google.com/workspace/tasks/reference/rest/v1/tasks/get)
-- [OAuth and authorization](https://developers.google.com/workspace/tasks/auth)
+- [OAuth for installed apps](https://developers.google.com/identity/protocols/oauth2/native-app)
 - [Usage limits](https://developers.google.com/workspace/tasks/limits)

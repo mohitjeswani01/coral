@@ -22,17 +22,17 @@ inputs:
     kind: secret
     hint: |
       Google Tasks OAuth access token. Use "Connect with Google" to authenticate
-      interactively via the OAuth authorization-code flow. Required scope:
-      https://www.googleapis.com/auth/tasks.readonly
+      interactively via the OAuth authorization-code flow with PKCE. Required
+      scope: https://www.googleapis.com/auth/tasks.readonly
     credential:
       methods:
         - type: oauth
           label: Connect with Google
-          description: Authenticate via Google OAuth authorization-code flow.
+          description: Authenticate via Google OAuth authorization-code flow with PKCE.
           oauth:
             flow:
               type: authorization_code
-              pkce: disabled
+              pkce: required
             redirect_uri: http://127.0.0.1:53682/oauth/callback
             redirect_uri_port_mode: fixed
             endpoints:
@@ -71,8 +71,8 @@ test_queries:
 tables:
   # ------------------------------------------------------------------
   # google_tasks.task_lists — all task lists accessible to the user
-  # GET /tasks/v1/users/@me/lists        (list all)
-  # GET /tasks/v1/users/@me/lists/{id}   (single object — row_strategy: direct)
+  # GET /tasks/v1/users/@me/lists
+  # Pagination: pageToken cursor, maxResults query param (max 1000).
   # ------------------------------------------------------------------
   - name: task_lists
     description: >-
@@ -81,28 +81,18 @@ tables:
     guide: |
       Entry-point table. Returns all task lists visible to the authenticated user.
       Obtain the `id` from here to query specific items in the `tasks` table.
-      Filtering by `id` routes directly to the single task list endpoint.
     fetch_limit_default: 100
-    filters:
-      - name: id
-        required: false
     request:
       method: GET
       path: /tasks/v1/users/@me/lists
-    requests:
-      - when_filters:
-          - id
-        method: GET
-        path: /tasks/v1/users/@me/lists/{{filter.id}}
     response:
       rows_path:
         - items
-      row_strategy: direct
     pagination:
       mode: cursor_query
       page_size:
         default: 100
-        max: 100
+        max: 1000
         query_param: maxResults
       cursor_param: pageToken
       response_cursor_path:
@@ -143,42 +133,43 @@ tables:
 
   # ------------------------------------------------------------------
   # google_tasks.tasks — task items inside a list
-  # GET /tasks/v1/lists/{tasklist}/tasks              (list all)
-  # GET /tasks/v1/lists/{tasklist}/tasks/{id}         (single object — row_strategy: direct)
+  # GET /tasks/v1/lists/{tasklist}/tasks
   # Required filter: tasklist_id (PATH param).
-  # Optional filters: show_completed, show_hidden, show_assigned, due_min, etc (QUERY params).
-  # Note: showAssigned=true is required to include tasks assigned from Docs/Chat.
+  # Optional filters pushed to API as query params: showCompleted (default true
+  # per Google API), showDeleted, showHidden, showAssigned, dueMin, dueMax,
+  # completedMin, completedMax, updatedMin.
   # ------------------------------------------------------------------
   - name: tasks
     description: >-
       Individual task items contained within a designated task list.
       Requires `tasklist_id` (from `google_tasks.task_lists.id`).
-      Optionally filter by `id` for single-task lookups, or by
-      `show_completed`, `show_hidden`, `show_assigned`, `due_min`, etc.
+      Optionally filter by `show_completed`, `show_hidden`, `show_assigned`,
+      `due_min`, `due_max`, `completed_min`, `completed_max`, or `updated_min`.
     guide: |
       Requires `tasklist_id` — obtain it from `google_tasks.task_lists`.
 
-      **Point Queries:** Filtering by both `tasklist_id` and `id` routes directly
-      to the single task endpoint and returns one row.
+      **Completed Tasks:** Google Tasks API returns completed tasks by default
+      (`showCompleted` defaults to true). Pass `show_completed = false` to
+      exclude them.
 
-      **Hidden Tasks:** By default, Google Tasks API does not return hidden
-      tasks or tasks completed in first-party clients (like the web UI or mobile app).
-      To see these tasks, include `show_completed = true` AND `show_hidden = true`.
+      **Hidden Tasks:** Hidden tasks (tasks completed in Google first-party
+      clients like the web UI or mobile app) are not returned by default.
+      Pass `show_hidden = true` to include them.
 
-      **Assigned Tasks:** Tasks assigned from Google Docs or Google Chat are not
-      returned by default. Pass `show_assigned = true` to include them.
+      **Assigned Tasks:** Tasks assigned from Google Docs or Google Chat are
+      not returned by default. Pass `show_assigned = true` to include them.
 
-      **Dates:** Filters like `due_min`, `due_max`, `completed_min`, and `completed_max`
-      accept RFC 3339 formatted timestamps (e.g., `2023-10-01T00:00:00Z`).
+      **Dates:** Filters like `due_min`, `due_max`, `completed_min`, and
+      `completed_max` accept RFC 3339 formatted timestamps
+      (e.g., `2024-01-01T00:00:00Z`).
 
-      **Rate limits:** Google Tasks enforces a courtesy rate limit of 50,000 queries
-      per day. Avoid unbounded scans on large lists; use `LIMIT` and date-range filters.
+      **Rate limits:** Google Tasks enforces a courtesy rate limit of 50,000
+      queries per day. Use `LIMIT` and date-range filters to keep queries
+      bounded on large task lists.
     fetch_limit_default: 100
     filters:
       - name: tasklist_id
         required: true
-      - name: id
-        required: false
       - name: show_completed
         required: false
       - name: show_deleted
@@ -228,16 +219,9 @@ tables:
         - name: updatedMin
           from: filter
           key: updated_min
-    requests:
-      - when_filters:
-          - tasklist_id
-          - id
-        method: GET
-        path: /tasks/v1/lists/{{filter.tasklist_id}}/tasks/{{filter.id}}
     response:
       rows_path:
         - items
-      row_strategy: direct
     pagination:
       mode: cursor_query
       page_size:
@@ -259,7 +243,7 @@ tables:
       - name: tasklist_id
         type: Utf8
         nullable: false
-        description: Virtual column mapping back to the filtered task list identifier.
+        description: The task list this task belongs to (echoes the required filter).
         expr:
           kind: from_filter
           key: tasklist_id
@@ -322,7 +306,7 @@ tables:
       - name: deleted
         type: Boolean
         nullable: true
-        description: Whether the task has been deleted (only returned if `show_deleted = true`).
+        description: Whether the task has been deleted (only present if `show_deleted = true`).
         expr:
           kind: path
           path:
@@ -330,7 +314,7 @@ tables:
       - name: hidden
         type: Boolean
         nullable: true
-        description: Whether the task is hidden (only returned if `show_hidden = true`).
+        description: Whether the task is hidden (only present if `show_hidden = true`).
         expr:
           kind: path
           path:
@@ -369,3 +353,84 @@ tables:
           kind: path
           path:
             - links
+      # Virtual columns that echo pushdown filter values back into the result
+      # so that WHERE clauses on these names are valid during query planning.
+      - name: show_completed
+        type: Boolean
+        nullable: true
+        virtual: true
+        description: >-
+          Echoes the show_completed filter. When set to false, excludes completed
+          tasks. Google Tasks API returns completed tasks by default (true).
+        expr:
+          kind: from_filter
+          key: show_completed
+      - name: show_deleted
+        type: Boolean
+        nullable: true
+        virtual: true
+        description: >-
+          Echoes the show_deleted filter. Set to true to include deleted tasks in results.
+        expr:
+          kind: from_filter
+          key: show_deleted
+      - name: show_hidden
+        type: Boolean
+        nullable: true
+        virtual: true
+        description: >-
+          Echoes the show_hidden filter. Set to true to include hidden tasks
+          (tasks completed in Google first-party clients).
+        expr:
+          kind: from_filter
+          key: show_hidden
+      - name: show_assigned
+        type: Boolean
+        nullable: true
+        virtual: true
+        description: >-
+          Echoes the show_assigned filter. Set to true to include tasks assigned
+          from Google Docs or Google Chat.
+        expr:
+          kind: from_filter
+          key: show_assigned
+      - name: due_min
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Echoes the due_min filter (RFC 3339). Lower bound for task due date.
+        expr:
+          kind: from_filter
+          key: due_min
+      - name: due_max
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Echoes the due_max filter (RFC 3339). Upper bound for task due date.
+        expr:
+          kind: from_filter
+          key: due_max
+      - name: completed_min
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Echoes the completed_min filter (RFC 3339). Lower bound for completion date.
+        expr:
+          kind: from_filter
+          key: completed_min
+      - name: completed_max
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Echoes the completed_max filter (RFC 3339). Upper bound for completion date.
+        expr:
+          kind: from_filter
+          key: completed_max
+      - name: updated_min
+        type: Utf8
+        nullable: true
+        virtual: true
+        description: Echoes the updated_min filter (RFC 3339). Lower bound for last modification date.
+        expr:
+          kind: from_filter
+          key: updated_min
