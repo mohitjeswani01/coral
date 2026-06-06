@@ -9,55 +9,53 @@ description: >-
 base_url: "https://tasks.googleapis.com"
 
 inputs:
-  GOOGLE_CLIENT_ID:
-    kind: variable
-    hint: |
-      Your Google Cloud Console OAuth 2.0 Desktop Application Client ID.
-      Ensure the Google Tasks API is enabled in your Google Cloud Project.
-  GOOGLE_CLIENT_SECRET:
+  GOOGLE_TASKS_ACCESS_TOKEN:
     kind: secret
     hint: |
-      Your Google Cloud Console OAuth 2.0 Desktop Application Client Secret.
-  GOOGLE_TASKS_TOKEN:
-    kind: secret
-    hint: |
-      Google Tasks OAuth access token. Use "Connect with Google" to authenticate
-      interactively via the OAuth authorization-code flow with PKCE. Required
-      scope: https://www.googleapis.com/auth/tasks.readonly
+      Google Tasks OAuth 2.0 access token. Use "Connect Google Tasks" to
+      authenticate interactively, or paste an existing access token issued
+      with the https://www.googleapis.com/auth/tasks.readonly scope.
     credential:
       methods:
         - type: oauth
-          label: Connect with Google
-          description: Authenticate via Google OAuth authorization-code flow with PKCE.
+          label: Connect Google Tasks
+          description: Use Google OAuth to retrieve a Tasks access token.
+          hint: |
+            Enable the Google Tasks API in a Google Cloud project and create
+            an OAuth 2.0 client of type "Desktop app", then enter its Client
+            ID and Client Secret below. Requests read-only access with the
+            `https://www.googleapis.com/auth/tasks.readonly` scope.
+            See [Google OAuth client setup](https://support.google.com/cloud/answer/6158849).
           oauth:
             flow:
               type: authorization_code
               pkce: required
-            redirect_uri: http://127.0.0.1:53682/oauth/callback
-            redirect_uri_port_mode: fixed
+            redirect_uri: http://127.0.0.1
+            redirect_uri_port_mode: random
             endpoints:
               authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent"
               token_url: https://oauth2.googleapis.com/token
             client:
               id:
-                input: GOOGLE_CLIENT_ID
+                input: GOOGLE_TASKS_OAUTH_CLIENT_ID
               secret:
-                input: GOOGLE_CLIENT_SECRET
-                transport: basic_auth
+                input: GOOGLE_TASKS_OAUTH_CLIENT_SECRET
+                transport: request_body
             scopes:
               scope:
                 delimiter: space
                 values:
                   - https://www.googleapis.com/auth/tasks.readonly
         - type: source_config
-          label: Paste token
+          label: Paste access token
+          description: Paste an existing Google Tasks OAuth access token.
 
 auth:
   type: HeaderAuth
   headers:
     - name: Authorization
       from: template
-      template: "Bearer {{input.GOOGLE_TASKS_TOKEN}}"
+      template: "Bearer {{input.GOOGLE_TASKS_ACCESS_TOKEN}}"
 
 request_headers:
   - name: Accept
@@ -66,7 +64,6 @@ request_headers:
 
 test_queries:
   - SELECT id, title, updated FROM google_tasks.task_lists LIMIT 5
-  - SELECT id, title, status FROM google_tasks.tasks WHERE tasklist_id = 'your-task-list-id' LIMIT 5
 
 tables:
   # ------------------------------------------------------------------
@@ -77,10 +74,12 @@ tables:
   - name: task_lists
     description: >-
       Personal and shared task lists belonging to the authenticated user.
-      Use the `id` from this table as the `tasklist_id` filter when querying the `tasks` table.
+      Use the `id` from this table as the `tasklist_id` filter when querying
+      the `tasks` table.
     guide: |
-      Entry-point table. Returns all task lists visible to the authenticated user.
-      Obtain the `id` from here to query specific items in the `tasks` table.
+      Entry-point table. Returns all task lists visible to the authenticated
+      user. Obtain the `id` from here to query specific items in the `tasks`
+      table.
     fetch_limit_default: 100
     request:
       method: GET
@@ -117,7 +116,7 @@ tables:
       - name: updated
         type: Timestamp
         nullable: true
-        description: Last modification time of the task list (RFC 3339 formatted).
+        description: Last modification time of the task list (RFC 3339).
         expr:
           kind: path
           path:
@@ -135,9 +134,7 @@ tables:
   # google_tasks.tasks — task items inside a list
   # GET /tasks/v1/lists/{tasklist}/tasks
   # Required filter: tasklist_id (PATH param).
-  # Optional filters pushed to API as query params: showCompleted (default true
-  # per Google API), showDeleted, showHidden, showAssigned, dueMin, dueMax,
-  # completedMin, completedMax, updatedMin.
+  # Optional filters pushed to API as query params.
   # ------------------------------------------------------------------
   - name: tasks
     description: >-
@@ -148,24 +145,25 @@ tables:
     guide: |
       Requires `tasklist_id` — obtain it from `google_tasks.task_lists`.
 
-      **Completed Tasks:** Google Tasks API returns completed tasks by default
-      (`showCompleted` defaults to true). Pass `show_completed = false` to
-      exclude them.
+      **Completed Tasks:** Google Tasks API returns completed tasks by
+      default (`showCompleted` defaults to true). However, tasks completed
+      in first-party Google clients (web UI, mobile app) become *hidden*
+      and are only visible when `show_hidden = true` is also set. To get
+      a full completion history, use both `show_completed = true` and
+      `show_hidden = true`.
 
-      **Hidden Tasks:** Hidden tasks (tasks completed in Google first-party
-      clients like the web UI or mobile app) are not returned by default.
-      Pass `show_hidden = true` to include them.
-
-      **Assigned Tasks:** Tasks assigned from Google Docs or Google Chat are
-      not returned by default. Pass `show_assigned = true` to include them.
+      **Assigned Tasks:** Tasks assigned from Google Docs or Google Chat
+      are not returned by default. Pass `show_assigned = true` to include
+      them. These tasks carry `assignment_info` with their origin surface,
+      link, and Drive/Space metadata.
 
       **Dates:** Filters like `due_min`, `due_max`, `completed_min`, and
       `completed_max` accept RFC 3339 formatted timestamps
       (e.g., `2024-01-01T00:00:00Z`).
 
-      **Rate limits:** Google Tasks enforces a courtesy rate limit of 50,000
-      queries per day. Use `LIMIT` and date-range filters to keep queries
-      bounded on large task lists.
+      **Rate limits:** Google Tasks enforces a courtesy rate limit of
+      50,000 queries per day. Use `LIMIT` and date-range filters to keep
+      queries bounded on large task lists.
     fetch_limit_default: 100
     filters:
       - name: tasklist_id
@@ -250,7 +248,7 @@ tables:
       - name: title
         type: Utf8
         nullable: true
-        description: Title / header summary of the task item.
+        description: Title of the task item.
         expr:
           kind: path
           path:
@@ -258,7 +256,8 @@ tables:
       - name: status
         type: Utf8
         nullable: false
-        description: Current structural status of the task (`needsAction` or `completed`).
+        description: >-
+          Current status of the task: `needsAction` or `completed`.
         expr:
           kind: path
           path:
@@ -266,7 +265,7 @@ tables:
       - name: due
         type: Timestamp
         nullable: true
-        description: Due date of the task (RFC 3339 formatted date portion, midnight UTC).
+        description: Due date of the task (RFC 3339, midnight UTC).
         expr:
           kind: path
           path:
@@ -274,7 +273,7 @@ tables:
       - name: completed
         type: Timestamp
         nullable: true
-        description: Completion timestamp of the task (RFC 3339 formatted).
+        description: Completion timestamp of the task (RFC 3339).
         expr:
           kind: path
           path:
@@ -282,7 +281,7 @@ tables:
       - name: notes
         type: Utf8
         nullable: true
-        description: Detailed descriptions or notes appended to the task item.
+        description: Notes or description appended to the task.
         expr:
           kind: path
           path:
@@ -290,7 +289,7 @@ tables:
       - name: parent
         type: Utf8
         nullable: true
-        description: Parent task identifier if this item acts as a subtask.
+        description: Parent task identifier if this is a subtask.
         expr:
           kind: path
           path:
@@ -298,7 +297,7 @@ tables:
       - name: position
         type: Utf8
         nullable: true
-        description: String indicating the position of the task among its sibling tasks.
+        description: Position of the task among its sibling tasks.
         expr:
           kind: path
           path:
@@ -306,7 +305,7 @@ tables:
       - name: deleted
         type: Boolean
         nullable: true
-        description: Whether the task has been deleted (only present if `show_deleted = true`).
+        description: Whether the task has been deleted (only present when show_deleted is true).
         expr:
           kind: path
           path:
@@ -314,7 +313,7 @@ tables:
       - name: hidden
         type: Boolean
         nullable: true
-        description: Whether the task is hidden (only present if `show_hidden = true`).
+        description: Whether the task is hidden (only present when show_hidden is true).
         expr:
           kind: path
           path:
@@ -322,7 +321,7 @@ tables:
       - name: updated
         type: Timestamp
         nullable: true
-        description: Last modification timestamp of the task (RFC 3339 formatted).
+        description: Last modification timestamp of the task (RFC 3339).
         expr:
           kind: path
           path:
@@ -330,7 +329,7 @@ tables:
       - name: self_link
         type: Utf8
         nullable: true
-        description: URL pointing to this task.
+        description: URL pointing to this task resource.
         expr:
           kind: path
           path:
@@ -338,13 +337,68 @@ tables:
       - name: web_view_link
         type: Utf8
         nullable: true
-        description: >-
-          Absolute link to the task in the Google Tasks web UI. Present on
-          tasks assigned from Google Docs or Chat.
+        description: Link to the task in the Google Tasks web UI.
         expr:
           kind: path
           path:
             - webViewLink
+      - name: assignment_surface_type
+        type: Utf8
+        nullable: true
+        description: >-
+          Origin surface for assigned tasks: DOCUMENT (Google Docs) or
+          SPACE (Google Chat). Null for non-assigned tasks.
+        expr:
+          kind: path
+          path:
+            - assignmentInfo
+            - surfaceType
+      - name: assignment_link_to_task
+        type: Utf8
+        nullable: true
+        description: >-
+          Absolute link to the assigned task in its origin surface
+          (the specific document or chat space).
+        expr:
+          kind: path
+          path:
+            - assignmentInfo
+            - linkToTask
+      - name: assignment_drive_file_id
+        type: Utf8
+        nullable: true
+        description: >-
+          Drive file ID of the document where the task was assigned.
+          Present when assignment_surface_type is DOCUMENT.
+        expr:
+          kind: path
+          path:
+            - assignmentInfo
+            - driveResourceInfo
+            - driveFileId
+      - name: assignment_space
+        type: Utf8
+        nullable: true
+        description: >-
+          Chat space identifier (spaces/{space}) where the task was assigned.
+          Present when assignment_surface_type is SPACE.
+        expr:
+          kind: path
+          path:
+            - assignmentInfo
+            - spaceInfo
+            - space
+      - name: assignment_info
+        type: Json
+        nullable: true
+        description: >-
+          Full raw assignmentInfo object. Contains surfaceType, linkToTask,
+          driveResourceInfo, and spaceInfo for tasks assigned from Google
+          Docs or Google Chat.
+        expr:
+          kind: path
+          path:
+            - assignmentInfo
       - name: links
         type: Json
         nullable: true
@@ -353,15 +407,15 @@ tables:
           kind: path
           path:
             - links
-      # Virtual columns that echo pushdown filter values back into the result
-      # so that WHERE clauses on these names are valid during query planning.
+      # Virtual columns that echo pushdown filter values so that
+      # WHERE clauses on these names pass query planning.
       - name: show_completed
         type: Boolean
         nullable: true
         virtual: true
         description: >-
-          Echoes the show_completed filter. When set to false, excludes completed
-          tasks. Google Tasks API returns completed tasks by default (true).
+          Echoes the show_completed filter. Google returns completed tasks
+          by default (true). Set false to exclude them.
         expr:
           kind: from_filter
           key: show_completed
@@ -369,8 +423,7 @@ tables:
         type: Boolean
         nullable: true
         virtual: true
-        description: >-
-          Echoes the show_deleted filter. Set to true to include deleted tasks in results.
+        description: Echoes the show_deleted filter. Set true to include deleted tasks.
         expr:
           kind: from_filter
           key: show_deleted
@@ -379,7 +432,7 @@ tables:
         nullable: true
         virtual: true
         description: >-
-          Echoes the show_hidden filter. Set to true to include hidden tasks
+          Echoes the show_hidden filter. Set true to include hidden tasks
           (tasks completed in Google first-party clients).
         expr:
           kind: from_filter
@@ -389,8 +442,8 @@ tables:
         nullable: true
         virtual: true
         description: >-
-          Echoes the show_assigned filter. Set to true to include tasks assigned
-          from Google Docs or Google Chat.
+          Echoes the show_assigned filter. Set true to include tasks
+          assigned from Google Docs or Google Chat.
         expr:
           kind: from_filter
           key: show_assigned
