@@ -15,22 +15,24 @@ inputs:
       Google Tasks OAuth 2.0 access token. Use "Connect Google Tasks" to
       authenticate interactively, or paste an existing access token issued
       with the https://www.googleapis.com/auth/tasks.readonly scope.
+
+      For interactive setup, enable the Google Tasks API in a Google Cloud
+      project and create an OAuth 2.0 client of type "Desktop app", then
+      enter its Client ID and Client Secret when prompted. See
+      https://support.google.com/cloud/answer/6158849.
     credential:
       methods:
         - type: oauth
           label: Connect Google Tasks
-          description: Use Google OAuth to retrieve a Tasks access token.
-          hint: |
-            Enable the Google Tasks API in a Google Cloud project and create
-            an OAuth 2.0 client of type "Desktop app", then enter its Client
-            ID and Client Secret below. Requests read-only access with the
-            `https://www.googleapis.com/auth/tasks.readonly` scope.
-            See [Google OAuth client setup](https://support.google.com/cloud/answer/6158849).
+          description: >-
+            Use Google OAuth to retrieve a Tasks access token.
+            Requests read-only access with the
+            https://www.googleapis.com/auth/tasks.readonly scope.
           oauth:
             flow:
               type: authorization_code
               pkce: required
-            redirect_uri: http://127.0.0.1
+            redirect_uri: http://127.0.0.1/oauth/callback
             redirect_uri_port_mode: random
             endpoints:
               authorization_url: "https://accounts.google.com/o/oauth2/v2/auth?access_type=offline&prompt=consent"
@@ -118,9 +120,12 @@ tables:
         nullable: true
         description: Last modification time of the task list (RFC 3339).
         expr:
-          kind: path
-          path:
-            - updated
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - updated
       - name: self_link
         type: Utf8
         nullable: true
@@ -267,17 +272,23 @@ tables:
         nullable: true
         description: Due date of the task (RFC 3339, midnight UTC).
         expr:
-          kind: path
-          path:
-            - due
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - due
       - name: completed
         type: Timestamp
         nullable: true
         description: Completion timestamp of the task (RFC 3339).
         expr:
-          kind: path
-          path:
-            - completed
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - completed
       - name: notes
         type: Utf8
         nullable: true
@@ -323,9 +334,12 @@ tables:
         nullable: true
         description: Last modification timestamp of the task (RFC 3339).
         expr:
-          kind: path
-          path:
-            - updated
+          kind: format_timestamp
+          input: iso8601
+          expr:
+            kind: path
+            path:
+              - updated
       - name: self_link
         type: Utf8
         nullable: true

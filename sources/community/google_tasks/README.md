@@ -31,10 +31,10 @@ pattern. You need a Google Cloud project with the Google Tasks API enabled.
 coral source add --interactive --file sources/community/google_tasks/manifest.yaml
 ```
 
-Coral uses authorization-code flow with PKCE and a random loopback redirect
-port (`http://127.0.0.1:{random}/oauth/callback`). The authorization URL
-includes `access_type=offline&prompt=consent` so Google issues a refresh
-token on first consent. Coral refreshes access tokens automatically.
+Coral uses authorization-code flow with PKCE and a random loopback
+redirect port (`http://127.0.0.1:{random}/oauth/callback`). The
+authorization URL includes `access_type=offline&prompt=consent` so
+Google issues a refresh token on first consent.
 
 If the browser cannot open (e.g. headless/WSL), Coral prints the
 authorization URL. Open it manually, complete consent, then paste the
