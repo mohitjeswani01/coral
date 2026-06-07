@@ -25,10 +25,10 @@ pattern. You need a Google Cloud project with the Google Tasks API enabled.
    **OAuth 2.0 Client ID**.
 3. Choose **Desktop app** as the application type.
 4. Copy the **Client ID** and **Client Secret**.
-5. Add the source — Coral opens a browser window for the OAuth consent flow:
+5. Add the source interactively — Coral opens a browser window for the OAuth consent flow:
 
 ```sh
-coral source add --file sources/community/google_tasks/manifest.yaml
+coral source add --interactive --file sources/community/google_tasks/manifest.yaml
 ```
 
 Coral uses authorization-code flow with PKCE and a random loopback redirect
@@ -105,13 +105,17 @@ large task lists.
 SELECT id, title, updated FROM google_tasks.task_lists;
 ```
 
-### 2. Query tasks that still need action
+### 2. Exclude completed tasks (only incomplete tasks)
+
+Use the `show_completed = false` pushdown filter to have the API return
+only incomplete tasks. Without this filter, Google returns completed tasks
+by default.
 
 ```sql
 SELECT id, title, due
 FROM google_tasks.tasks
 WHERE tasklist_id = 'YOUR_LIST_ID'
-  AND status = 'needsAction';
+  AND show_completed = false;
 ```
 
 ### 3. Full completion history (visible + hidden completed tasks)
